@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  STAFF
+}
+
+enum OrderChannel {
+  WEB
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  WEBPAY
+  MERCADOPAGO
+  TRANSFER
+  CASH
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String?
+  role         Role     @default(STAFF)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ordersCreated Order[] @relation("OrdersCreated")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  fullName  String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+
+  orders    Order[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  priceClp    Int
+  stockQty    Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  images      ProductImage[]
+  orderItems  OrderItem[]
+
+  @@index([isActive])
+}
+
+model ProductImage {
+  id          String   @id @default(uuid())
+  productId   String
+  urlOriginal String
+  urlLarge    String
+  urlThumb    String
+  sortOrder   Int      @default(0)
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Order {
+  id              String       @id @default(uuid())
+  orderCode        String       @unique @default(cuid())
+  channel         OrderChannel @default(WEB)
+  status          OrderStatus  @default(PENDING_PAYMENT)
+
+  customerId      String?
+  customer        Customer?    @relation(fields: [customerId], references: [id])
+
+  subtotalClp     Int          @default(0)
+  shippingClp     Int          @default(0)
+  discountClp     Int          @default(0)
+  totalClp        Int          @default(0)
+
+  createdByUserId String?
+  createdBy       User?        @relation("OrdersCreated", fields: [createdByUserId], references: [id])
+
+  createdAt       DateTime     @default(now())
+
+  items           OrderItem[]
+  payments        Payment[]
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid())
+  orderId              String
+  productId            String
+
+  productNameSnapshot  String
+  unitPriceClp         Int
+  qty                  Int
+  lineTotalClp         Int
+
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product              Product  @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Payment {
+  id          String          @id @default(uuid())
+  orderId     String
+  provider    PaymentProvider
+  status      PaymentStatus   @default(INITIATED)
+  providerRef String?
+  amountClp   Int
+  rawResponse Json?
+  createdAt   DateTime        @default(now())
+
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
