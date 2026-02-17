@@ -8,6 +8,7 @@ const fs = require("fs");
 
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
+const { validateUuidParam } = require("../middleware/validate-uuid");
 const { slugify } = require("../utils/slug");
 
 const router = express.Router();
@@ -111,7 +112,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
+router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
   const schema = z.object({
     name: z.string().min(2).optional(),
     description: z.string().optional().nullable(),
@@ -174,7 +175,7 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
 });
 
 // ===== Images =====
-router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
   const { id } = req.params;
   try {
     const pool = getPool();
@@ -194,6 +195,7 @@ router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (re
 router.post(
   "/:id/images",
   requireRole("SUPERADMIN", "ADMIN"),
+  validateUuidParam("id"),
   upload.array("images", 8),
   async (req, res, next) => {
     const productId = req.params.id;
@@ -241,7 +243,7 @@ router.post(
   }
 );
 
-router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), async (req, res, next) => {
+router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), async (req, res, next) => {
   try {
     const { imageId } = req.params;
     const pool = getPool();
@@ -260,7 +262,7 @@ router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), asy
   }
 });
 
-router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), async (req, res, next) => {
+router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), async (req, res, next) => {
   try {
     const { imageId } = req.params;
     const pool = getPool();

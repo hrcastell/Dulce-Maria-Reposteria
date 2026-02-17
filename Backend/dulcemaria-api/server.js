@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
+const { validateEnv } = require("./src/config/env");
 
 const authRoutes = require("./src/routes/auth");
 const publicCatalogRoutes = require("./src/routes/public.catalog");
@@ -13,16 +14,39 @@ const adminProductsRoutes = require("./src/routes/admin.products");
 const adminCustomersRoutes = require("./src/routes/admin.customers");
 const adminOrdersRoutes = require("./src/routes/admin.orders");
 const adminReportsRoutes = require("./src/routes/admin.reports");
-const { runSalesMigrations } = require("./src/migrations/sales");
+const { runCompleteMigrations } = require("./src/migrations/complete");
 
 const { requireAuth } = require("./src/middleware/auth");
+const { publicApiLimiter, adminApiLimiter } = require("./src/middleware/rate-limit");
 const { getPool } = require("./src/db");
 
 const app = express();
 app.set("trust proxy", 1);
 
+// CORS restrictivo
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173", // Vite dev
+  "https://hrcastell.com",
+  "https://www.hrcastell.com",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Permitir requests sin origin (Postman, curl, misma app)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
+  credentials: true,
+}));
+
 app.use(helmet());
-app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("combined"));
 
@@ -50,14 +74,14 @@ app.get("/db-check", async (req, res) => {
   }
 });
 
-// Auth
+// Auth (ya tiene rate limiting específico en cada endpoint)
 app.use("/auth", authRoutes);
 
-// Catálogo público
-app.use("/catalog", publicCatalogRoutes);
+// Catálogo público (rate limiting para prevenir scraping)
+app.use("/catalog", publicApiLimiter, publicCatalogRoutes);
 
-// Admin (portal) — protegido
-app.use("/admin", requireAuth);
+// Admin (portal) — protegido + rate limiting
+app.use("/admin", requireAuth, adminApiLimiter);
 app.use("/admin/customers", adminCustomersRoutes);
 app.use("/admin/orders", adminOrdersRoutes);
 app.use("/admin/reports", adminReportsRoutes);
@@ -92,10 +116,11 @@ app.use((err, req, res, next) => {
 
 (async () => {
   try {
-    await runSalesMigrations();
-    console.log("Sales migrations OK ✅");
+    validateEnv();
+    await runCompleteMigrations();
+    console.log("✅ Database migrations completed successfully");
   } catch (e) {
-    console.error("Sales migrations FAILED ❌:", e?.message || e);
+    console.error("❌ Startup failed:", e?.message || e);
     process.exit(1);
   }
 

@@ -1,0 +1,299 @@
+### Dulce Maria Reposteria - Testing Completo Backend v2.0
+### Extensión: REST Client (humao.rest-client)
+
+@baseUrl = https://hrcastell.com
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3NDkxODgwNS03NDg3LTQ4ZDctOTBlZS0wODhmOGU2N2NiN2QiLCJlbWFpbCI6Imhlcm5hbi5jYXN0ZWxsYW5vc0BocmNhc3RlbGwuY29tIiwicm9sZSI6IlNVUEVSQURNSU4iLCJpYXQiOjE3NzEzNTg0NDQsImV4cCI6MTc3MTk2MzI0NH0.jKyFf4-fCER0sI4fxhuoyinptjOMaMgrDkxbRd1M18Q
+@adminEmail = hernan.castellanos@hrcastell.com
+@adminPassword = N@nreh26*
+
+# Variables dinámicas (se actualizan al ejecutar)
+@customerId = 61ab2875-ff9a-4cbe-a068-cf107b8e4a6d
+@productId1 = f3c332bf-a5d5-4eb2-a2cc-03295ab700d2
+@productId2 = f6833f3f-cd98-4803-8c7b-efbf63d15822
+@orderId = a244bc32-2761-4b5f-9117-e4daa102f487
+
+########################
+# 1. HEALTH CHECKS
+########################
+
+### Health Check
+GET {{baseUrl}}/health
+
+### DB Check
+GET {{baseUrl}}/db-check
+
+########################
+# 2. AUTHENTICATION
+########################
+
+### Login (Actualiza @token)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+########################
+# 3. PRODUCTOS
+########################
+
+### Listar productos
+GET {{baseUrl}}/admin/products
+Authorization: Bearer {{token}}
+
+### Crear Producto 1: Torta de Chocolate
+# @name createProduct1
+POST {{baseUrl}}/admin/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Torta de Chocolate",
+  "description": "Deliciosa torta de chocolate con ganache",
+  "price_clp": 15000,
+  "stock_qty": 20
+}
+
+### Crear Producto 2: Cupcakes Vainilla
+# @name createProduct2
+POST {{baseUrl}}/admin/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Cupcakes de Vainilla",
+  "description": "Pack de 6 cupcakes de vainilla con buttercream",
+  "price_clp": 8000,
+  "stock_qty": 30
+}
+
+### Obtener detalle de producto
+GET {{baseUrl}}/admin/products/{{productId1}}
+Authorization: Bearer {{token}}
+
+########################
+# 4. CUSTOMERS
+########################
+
+### Listar customers
+GET {{baseUrl}}/admin/customers
+Authorization: Bearer {{token}}
+
+### Crear Customer 1
+# @name createCustomer
+POST {{baseUrl}}/admin/customers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "full_name": "María González",
+  "email": "maria.gonzalez@example.com",
+  "phone": "+56912345678",
+  "address": "Av. Providencia 1234, Santiago"
+}
+
+### Crear Customer 2 (sin email)
+POST {{baseUrl}}/admin/customers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "full_name": "Juan Pérez",
+  "phone": "+56987654321",
+  "address": "Los Leones 456, Providencia",
+  "notes": "Cliente frecuente"
+}
+
+### Buscar customer por nombre
+GET {{baseUrl}}/admin/customers?search=María
+Authorization: Bearer {{token}}
+
+########################
+# 5. ÓRDENES
+########################
+
+### Listar órdenes
+GET {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+
+### Crear Orden Completa (con items)
+# @name createOrder
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": "{{customerId}}",
+  "items": [
+    {
+      "productId": "{{productId1}}",
+      "qty": 2
+    },
+    {
+      "productId": "{{productId2}}",
+      "qty": 3
+    }
+  ],
+  "paymentMethod": "TRANSFER",
+  "paymentStatus": "PAID",
+  "deliveryMethod": "DELIVERY",
+  "deliveryFeeClp": 2500
+}
+
+### Obtener detalle de orden (con items)
+GET {{baseUrl}}/admin/orders/{{orderId}}
+Authorization: Bearer {{token}}
+
+### Actualizar estado de orden
+PATCH {{baseUrl}}/admin/orders/{{orderId}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "PREPARING"
+}
+
+### Actualizar estado de pago
+PATCH {{baseUrl}}/admin/orders/{{orderId}}/payment
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "paymentStatus": "PAID"
+}
+
+########################
+# 6. CATÁLOGO PÚBLICO
+########################
+
+### Ver catálogo público (sin autenticación)
+GET {{baseUrl}}/catalog/products
+
+########################
+# 7. REPORTES
+########################
+
+### Reporte diario
+GET {{baseUrl}}/admin/reports/daily?date=2026-02-07
+Authorization: Bearer {{token}}
+
+########################
+# 8. TESTING DE VALIDACIONES
+########################
+
+### Error: Crear orden sin customer_id (400)
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "product_id": "{{productId1}}",
+      "qty": 1
+    }
+  ]
+}
+
+### Error: Crear orden con producto inexistente (404)
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customer_id": "{{customerId}}",
+  "items": [
+    {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "qty": 1
+    }
+  ]
+}
+
+### Error: Crear orden sin stock suficiente (400)
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customer_id": "{{customerId}}",
+  "items": [
+    {
+      "product_id": "{{productId1}}",
+      "qty": 999
+    }
+  ]
+}
+
+########################
+# 9. TESTING DE RATE LIMITING
+########################
+
+### Intentar login 6 veces seguidas (rate limit)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "wrong@email.com",
+  "password": "wrongpass"
+}
+
+########################
+# 10. TESTING DE NUEVOS CAMPOS
+########################
+
+### Crear orden con todos los campos nuevos
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": "{{customerId}}",
+  "items": [
+    {
+      "productId": "{{productId1}}",
+      "qty": 1
+    }
+  ],
+  "paymentMethod": "CASH",
+  "paymentStatus": "PENDING",
+  "deliveryMethod": "PICKUP",
+  "deliveryFeeClp": 0
+}
+
+### Verificar que order_no se genera automáticamente
+GET {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+
+########################
+# NOTAS DE USO
+########################
+
+# 1. Ejecuta en orden:
+#    - Login (para obtener token)
+#    - Crear productos (copia los IDs)
+#    - Crear customer (copia el ID)
+#    - Actualiza las variables @productId1, @productId2, @customerId
+#    - Crear orden
+#    - Copia el @orderId
+#    - Prueba actualizaciones de estado
+
+# 2. Para actualizar variables automáticamente:
+#    - Después de crear producto, copia el "id" del response
+#    - Pégalo en la variable @productId1 o @productId2
+#    - Haz lo mismo con customer y order
+
+# 3. Campos nuevos que se probaron:
+#    - order_no (generado automáticamente)
+#    - payment_status (PENDING, PAID, FAILED, REFUNDED)
+#    - payment_method (TRANSFER, CASH, ONLINE)
+#    - delivery_method (PICKUP, DELIVERY)
+#    - delivery_fee_clp
+
+# 4. Rate limiting:
+#    - Login: 5 intentos cada 15 min
+#    - Public API: 100 requests cada 15 min
+#    - Admin API: 200 requests cada 15 min

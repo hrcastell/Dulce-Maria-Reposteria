@@ -4,6 +4,7 @@ const { z } = require("zod");
 
 const { getPool } = require("../db");
 const { verifyPassword } = require("../utils/password");
+const { loginLimiter, bootstrapLimiter } = require("../middleware/rate-limit");
 
 const crypto = require("crypto");
 const { hashPassword } = require("../utils/password");
@@ -25,7 +26,7 @@ function requireBootstrapToken(req, res) {
 
 const router = express.Router();
 
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
     password: z.string().min(6),
@@ -66,7 +67,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.post("/bootstrap", async (req, res) => {
+router.post("/bootstrap", bootstrapLimiter, async (req, res) => {
   const auth = requireBootstrapToken(req, res);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 

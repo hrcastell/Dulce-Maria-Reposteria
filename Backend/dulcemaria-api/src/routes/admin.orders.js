@@ -4,10 +4,11 @@ const crypto = require("crypto");
 
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
+const { validateUuidParam } = require("../middleware/validate-uuid");
 
 const router = express.Router();
 
-const ORDER_STATUS = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED","CANCELLED"];
+const ORDER_STATUS = ["PENDING_PAYMENT","PAID","PREPARING","READY","DELIVERED","CANCELLED"];
 const PAYMENT_STATUS = ["PENDING","PAID","FAILED","REFUNDED"];
 const PAYMENT_METHOD = ["TRANSFER","CASH","ONLINE"];
 const DELIVERY_METHOD = ["PICKUP","DELIVERY"];
@@ -55,7 +56,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
  * GET /admin/orders/:id
  * Detalle de una venta (cabecera + items)
  */
-router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -166,12 +167,14 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
     // Insert order
     const orderId = crypto.randomUUID();
+    const orderCode = `ORD-${Date.now()}`; // order_code generado con timestamp
+    
     const o = await client.query(
-      `INSERT INTO orders (id, customer_id, status, payment_status, payment_method, delivery_method,
+      `INSERT INTO orders (id, order_code, customer_id, status, payment_status, payment_method, delivery_method,
                            subtotal_clp, delivery_fee_clp, total_clp, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
-       RETURNING id, order_no, status, total_clp`,
-      [orderId, customerId, status, paymentStatus, paymentMethod, deliveryMethod, subtotal, deliveryFeeClp, total]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
+       RETURNING id, order_no, order_code, status, total_clp`,
+      [orderId, orderCode, customerId, status, paymentStatus, paymentMethod, deliveryMethod, subtotal, deliveryFeeClp, total]
     );
 
     // Items + stock update
@@ -202,6 +205,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       order: {
         id: o.rows[0].id,
         orderNo: o.rows[0].order_no,
+        orderCode: o.rows[0].order_code,
         status: o.rows[0].status,
         totalClp: o.rows[0].total_clp
       }
@@ -220,42 +224,62 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
  * PATCH /admin/orders/:id/status
  * Cambia estado y/o estado de pago
  */
-router.patch("/:id/status", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.patch("/:id/status", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
   const schema = z.object({
-    status: z.enum(ORDER_STATUS).optional(),
-    paymentStatus: z.enum(PAYMENT_STATUS).optional(),
+    status: z.enum(ORDER_STATUS),
   });
 
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
   const { id } = req.params;
-  const { status, paymentStatus } = parsed.data;
-
-  if (status === undefined && paymentStatus === undefined) {
-    return res.status(400).json({ ok: false, error: "Nada para actualizar" });
-  }
+  const { status } = parsed.data;
 
   try {
     const pool = getPool();
 
-    const fields = [];
-    const vals = [];
-    let n = 1;
+    const r = await pool.query(
+      `UPDATE orders
+       SET status=$1, updated_at=NOW()
+       WHERE id=$2
+       RETURNING id, order_no, status, payment_status, updated_at`,
+      [status, id]
+    );
 
-    if (status !== undefined) { fields.push(`status=$${n++}`); vals.push(status); }
-    if (paymentStatus !== undefined) { fields.push(`payment_status=$${n++}`); vals.push(paymentStatus); }
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
 
-    vals.push(id);
+    return res.json({ ok: true, order: r.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
 
-    const q = `
-      UPDATE orders
-      SET ${fields.join(", ")}, updated_at=NOW()
-      WHERE id=$${n}
-      RETURNING id, order_no, status, payment_status, updated_at
-    `;
+/**
+ * PATCH /admin/orders/:id/payment
+ * Actualiza estado de pago
+ */
+router.patch("/:id/payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+  const schema = z.object({
+    paymentStatus: z.enum(PAYMENT_STATUS),
+  });
 
-    const r = await pool.query(q, vals);
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+  const { id } = req.params;
+  const { paymentStatus } = parsed.data;
+
+  try {
+    const pool = getPool();
+
+    const r = await pool.query(
+      `UPDATE orders
+       SET payment_status=$1, updated_at=NOW()
+       WHERE id=$2
+       RETURNING id, order_no, status, payment_status, updated_at`,
+      [paymentStatus, id]
+    );
+
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
 
     return res.json({ ok: true, order: r.rows[0] });

@@ -1,0 +1,236 @@
+### Dulce Maria Reposteria — REST Client (VSCode) v2
+### Extensión: REST Client (humao.rest-client)
+### 1) Ajusta @baseUrl
+### 2) Ajusta @bootstrapToken (temporal) y ejecútalo una vez
+### 3) Copia el token JWT devuelto y pégalo en @token
+
+@baseUrl = https://hrcastell.com
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3NDkxODgwNS03NDg3LTQ4ZDctOTBlZS0wODhmOGU2N2NiN2QiLCJlbWFpbCI6Imhlcm5hbi5jYXN0ZWxsYW5vc0BocmNhc3RlbGwuY29tIiwicm9sZSI6IlNVUEVSQURNSU4iLCJpYXQiOjE3NzA1MTM3MjQsImV4cCI6MTc3MTExODUyNH0._iVDQl4IBQscf89zaRxBUmGEP5xe0R_-KirSDdhjink
+@adminEmail = hernan.castellanos@hrcastell.com
+@adminPassword = N@nreh26*
+
+@customerId = d48448f6-ea4a-45a3-b4e3-50075eb522c7
+@productId = f6833f3f-cd98-4803-8c7b-efbf63d15822
+@orderId = REEMPLAZA_UUID_ORDER
+
+###
+# Health
+GET {{baseUrl}}/health
+
+###
+# DB Check
+GET {{baseUrl}}/db-check
+
+###
+# Login (obtén token y pégalo en @token)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+########################
+# PRODUCTS (Admin)
+########################
+
+###
+# Listar productos (Admin)
+GET {{baseUrl}}/admin/products
+Authorization: Bearer {{token}}
+
+###
+# Crear producto (ADMIN/SUPERADMIN)
+POST {{baseUrl}}/admin/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Torta de Zanahoraria",
+  "description": "Roles de canela cubiertos de creama de queso y canela.",
+  "priceClp": 2500,
+  "stockQty": 7,
+  "isActive": true
+}
+
+########################
+# PRODUCT IMAGES (Admin)
+########################
+
+###
+# Listar imágenes de un producto
+# Reemplaza :id por el UUID del producto
+GET {{baseUrl}}/admin/products/c7fa2b5b-2958-46fb-843f-6ee28076fe67/images
+Authorization: Bearer {{token}}
+
+###
+# Subir 1 imagen (multipart/form-data)
+# 1) Reemplaza :id por el UUID del producto
+# 2) Asegúrate de que exista el archivo local ./1.jpg
+# 3) Cambia Content-Type si es PNG/WEBP
+POST {{baseUrl}}/admin/products/c7fa2b5b-2958-46fb-843f-6ee28076fe67/images
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----dmBoundary
+
+------dmBoundary
+Content-Disposition: form-data; name="images"; filename="1.jpg"
+Content-Type: image/jpeg
+
+< ./1.jpg
+------dmBoundary--
+
+###
+# Subir 3 imágenes a la vez (multipart/form-data)
+# IMPORTANTE: máximo 8 imágenes por producto (total acumulado)
+POST {{baseUrl}}/admin/products/c7fa2b5b-2958-46fb-843f-6ee28076fe67/images
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----dmBoundary
+
+------dmBoundary
+Content-Disposition: form-data; name="images"; filename="1.jpg"
+Content-Type: image/jpeg
+
+< ./1.jpg
+------dmBoundary
+Content-Disposition: form-data; name="images"; filename="2.jpg"
+Content-Type: image/jpeg
+
+< ./2.jpg
+------dmBoundary
+Content-Disposition: form-data; name="images"; filename="3.jpg"
+Content-Type: image/jpeg
+
+< ./3.jpg
+------dmBoundary--
+
+###
+# Marcar una imagen como principal
+# Reemplaza :imageId por el UUID de product_images.id
+PATCH {{baseUrl}}/admin/products/images/:imageId/primary
+Authorization: Bearer {{token}}
+
+###
+# Eliminar una imagen
+# Reemplaza :imageId por el UUID de product_images.id
+DELETE {{baseUrl}}/admin/products/images/:imageId
+Authorization: Bearer {{token}}
+
+########################
+# PUBLIC CATALOG (Web)
+########################
+
+###
+# Catálogo público (solo activos)
+GET {{baseUrl}}/catalog/products
+Authorization: Bearer {{token}}
+
+################################
+# BASE
+################################
+
+###
+GET {{baseUrl}}/health
+
+###
+GET {{baseUrl}}/db-check
+
+################################
+# AUTH
+################################
+
+###
+# Login -> copia el token del response y pégalo en @token
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+################################
+# CUSTOMERS (Admin)
+################################
+
+###
+# Crear cliente
+POST {{baseUrl}}/admin/customers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "cliente190A@correo.com",
+  "fullName": "cliente 1903A",
+  "phone": "+56911112222",
+  "address": "San Joaquín, Santiago",
+  "notes": "Prefiere entrega AM"
+}
+
+###
+# Listar clientes (últimos 50)
+GET {{baseUrl}}/admin/customers
+Authorization: Bearer {{token}}
+
+###
+# Buscar clientes por texto (email/nombre/teléfono)
+GET {{baseUrl}}/admin/customers?q=1902
+Authorization: Bearer {{token}}
+
+################################
+# ORDERS (Admin) - crear venta interna
+################################
+
+###
+# Crear venta (valida stock y descuenta stock en transacción)
+# Si stock insuficiente => 400 con mensaje claro
+POST {{baseUrl}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orderCode": "VENTA-INTERNA-001",
+  "customerId": "{{customerId}}",
+  "items": [
+    { "productId": "{{productId}}", "qty": 1 }
+  ],
+  "channel": "TRANSFERENCIA",
+  "totalClp": 2500,
+  "status": "DELIVERED",
+  "notes": "Venta realizada por teléfono, cliente pagará por transferencia mañana."
+}
+
+###
+# Ventas por rango (día completo ejemplo)
+GET {{baseUrl}}/admin/orders?from=2026-02-06&to=2026-02-07
+Authorization: Bearer {{token}}
+
+###
+# Ventas por rango + status (opcional)
+GET {{baseUrl}}/admin/orders?from=2026-02-01&to=2026-03-01&status=DELIVERED
+Authorization: Bearer {{token}}
+
+###
+# Detalle de una venta (cabecera + items)
+GET {{baseUrl}}/admin/orders/{{orderId}}
+Authorization: Bearer {{token}}
+
+###
+# Cambiar estado / estado de pago
+PATCH {{baseUrl}}/admin/orders/{{orderId}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "CONFIRMED",
+  "paymentStatus": "PENDING"
+}
+
+################################
+# REPORTS (Admin)
+################################
+
+###
+# Reporte del día: total ventas + top productos
+GET {{baseUrl}}/admin/reports/daily?date=2026-02-06
+Authorization: Bearer {{token}}
