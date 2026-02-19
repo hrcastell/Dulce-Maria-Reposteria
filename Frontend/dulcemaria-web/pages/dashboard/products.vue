@@ -90,10 +90,10 @@
                   <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button 
                       class="text-primary-600 hover:text-primary-900 mr-3 disabled:opacity-50"
-                      :disabled="loadingImages"
+                      :disabled="loadingProductId === product.id"
                       @click="openEditModal(product)"
                     >
-                      {{ loadingImages ? 'Cargando...' : 'Editar' }}
+                      {{ loadingProductId === product.id ? 'Cargando...' : 'Editar' }}
                     </button>
                     <button 
                       class="text-red-600 hover:text-red-900"
@@ -173,7 +173,7 @@ const showDeleteDialog = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const productFormRef = ref<any>(null)
-const loadingImages = ref(false)
+const loadingProductId = ref<string | null>(null)
 const editFormRef = ref<any>(null)
 const selectedProduct = ref<Product | null>(null)
 const productToDelete = ref<Product | null>(null)
@@ -253,13 +253,13 @@ const handleSubmitProduct = async (data: any) => {
 
 const openEditModal = async (product: Product) => {
   selectedProduct.value = null
-  loadingImages.value = true
+  loadingProductId.value = product.id
   try {
     const images = await loadProductImages(product.id)
     selectedProduct.value = { ...product, images }
     showEditModal.value = true
   } finally {
-    loadingImages.value = false
+    loadingProductId.value = null
   }
 }
 
@@ -279,11 +279,11 @@ const handleUpdateProduct = async (data: any) => {
       data
     )
     
-    if (response.ok && response.product) {
+    if (response.ok) {
       // Subir nuevas imágenes si existen
-      const images = editFormRef.value?.getImages() || []
+      const images: any[] = editFormRef.value?.getImages() || []
       const newImages = images.filter((img: any) => img.file && !img.id)
-      if (newImages.length > 0) {
+      if (newImages.length > 0 && selectedProduct.value) {
         await uploadProductImages(selectedProduct.value.id, newImages)
       }
       
