@@ -68,6 +68,23 @@
       :existing-images="product?.images"
       @update="handleImagesUpdate"
     />
+
+    <!-- Variantes -->
+    <div>
+      <label class="flex items-center gap-2 cursor-pointer mb-2">
+        <input
+          v-model="hasVariants"
+          type="checkbox"
+          class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+        >
+        <span class="text-sm text-gray-700 font-medium">Este producto tiene variantes (sabores, presentaciones, etc.)</span>
+      </label>
+      <ProductVariants
+        v-if="hasVariants"
+        ref="variantsRef"
+        :product-id="product?.id"
+      />
+    </div>
   </div>
 </template>
 
@@ -89,9 +106,23 @@ const form = ref({
   is_active: props.product?.is_active ?? true
 })
 
+const api = useApi()
 const error = ref('')
 const imageUploadRef = ref<any>(null)
+const variantsRef = ref<any>(null)
 const productImages = ref<any[]>([])
+const hasVariants = ref(false)
+
+onMounted(async () => {
+  if (props.product?.id) {
+    try {
+      const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/products/${props.product.id}/variants`)
+      if (res.ok && res.items && res.items.length > 0) {
+        hasVariants.value = true
+      }
+    } catch {}
+  }
+})
 
 const handleImagesUpdate = (images: any[]) => {
   productImages.value = images

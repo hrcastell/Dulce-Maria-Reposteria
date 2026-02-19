@@ -348,4 +348,103 @@ router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUu
   }
 });
 
+// ===== Variants =====
+
+router.get("/:id/variants", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT id, product_id, name, price_override_clp, stock_qty, is_active, sort_order, created_at
+       FROM product_variants
+       WHERE product_id = $1
+       ORDER BY sort_order ASC, created_at ASC`,
+      [id]
+    );
+    res.json({ ok: true, items: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.post("/:id/variants", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+  const { id } = req.params;
+  const schema = z.object({
+    name: z.string().min(1).max(100),
+    price_override_clp: z.number().int().nonnegative().nullable().optional(),
+    stock_qty: z.number().int().nonnegative().default(0),
+    is_active: z.boolean().default(true),
+    sort_order: z.number().int().default(0),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+  try {
+    const pool = getPool();
+    const prod = await pool.query("SELECT id FROM products WHERE id=$1 LIMIT 1", [id]);
+    if (prod.rowCount === 0) return res.status(404).json({ ok: false, error: "Producto no encontrado" });
+
+    const r = await pool.query(
+      `INSERT INTO product_variants (id, product_id, name, price_override_clp, stock_qty, is_active, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING *`,
+      [crypto.randomUUID(), id, parsed.data.name, parsed.data.price_override_clp ?? null, parsed.data.stock_qty, parsed.data.is_active, parsed.data.sort_order]
+    );
+    res.json({ ok: true, variant: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.patch("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), async (req, res) => {
+  const { variantId } = req.params;
+  const schema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    price_override_clp: z.number().int().nonnegative().nullable().optional(),
+    stock_qty: z.number().int().nonnegative().optional(),
+    is_active: z.boolean().optional(),
+    sort_order: z.number().int().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+  const fields = [];
+  const values = [];
+  let n = 1;
+  const d = parsed.data;
+  if (d.name !== undefined) { fields.push(`name=$${n++}`); values.push(d.name); }
+  if ('price_override_clp' in d) { fields.push(`price_override_clp=$${n++}`); values.push(d.price_override_clp ?? null); }
+  if (d.stock_qty !== undefined) { fields.push(`stock_qty=$${n++}`); values.push(d.stock_qty); }
+  if (d.is_active !== undefined) { fields.push(`is_active=$${n++}`); values.push(d.is_active); }
+  if (d.sort_order !== undefined) { fields.push(`sort_order=$${n++}`); values.push(d.sort_order); }
+
+  if (fields.length === 0) return res.status(400).json({ ok: false, error: "Nada que actualizar" });
+  fields.push(`updated_at=NOW()`);
+  values.push(variantId);
+
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `UPDATE product_variants SET ${fields.join(",")} WHERE id=$${n} RETURNING *`,
+      values
+    );
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Variante no encontrada" });
+    res.json({ ok: true, variant: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.delete("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), async (req, res) => {
+  const { variantId } = req.params;
+  try {
+    const pool = getPool();
+    const r = await pool.query("DELETE FROM product_variants WHERE id=$1 RETURNING id", [variantId]);
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Variante no encontrada" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
 module.exports = router;

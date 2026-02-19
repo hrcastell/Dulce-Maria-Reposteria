@@ -9,11 +9,15 @@ const { validateEnv } = require("./src/config/env");
 
 const authRoutes = require("./src/routes/auth");
 const publicCatalogRoutes = require("./src/routes/public.catalog");
+const publicOrdersRoutes = require("./src/routes/public.orders");
 const adminUsersRoutes = require("./src/routes/admin.users");
 const adminProductsRoutes = require("./src/routes/admin.products");
 const adminCustomersRoutes = require("./src/routes/admin.customers");
 const adminOrdersRoutes = require("./src/routes/admin.orders");
 const adminReportsRoutes = require("./src/routes/admin.reports");
+const adminSuppliesRoutes = require("./src/routes/admin.supplies");
+const adminCakeRoutes = require("./src/routes/admin.cake");
+const publicCakeRoutes = require("./src/routes/public.cake");
 const { runCompleteMigrations } = require("./src/migrations/complete");
 
 const { requireAuth } = require("./src/middleware/auth");
@@ -50,48 +54,92 @@ app.use(helmet());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("combined"));
 
+// Evitar que el proxy/CDN de cPanel cachee respuestas de la API
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  next();
+});
+
 // Servir archivos subidos con CORP permisivo para permitir carga cross-origin
-app.use("/uploads", (req, res, next) => {
+const serveUploads = (req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   next();
-}, express.static(path.join(__dirname, "uploads")));
+};
+
+app.use("/uploads", serveUploads, express.static(path.join(__dirname, "uploads")));
+app.use("/dulcemaria/uploads", serveUploads, express.static(path.join(__dirname, "uploads")));
+
+// ==========================================
+// DEFINICIÓN DE RUTAS (API ROUTER)
+// ==========================================
+const apiRouter = express.Router();
 
 // Health
-app.get("/health", (req, res) => {
+apiRouter.get("/health", (req, res) => {
   res.json({
     ok: true,
     service: "dulcemaria-api",
-    build: "2026-02-05-fixed",
+    build: "2026-02-19-prod",
     time: new Date().toISOString(),
   });
 });
 
-// DB check
-app.get("/db-check", async (req, res) => {
-  try {
-    const pool = getPool();
-    const r = await pool.query("SELECT NOW() AS now");
-    res.json({ ok: true, dbTime: r.rows?.[0]?.now ?? null });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
-  }
-});
+// Rutas de API
+apiRouter.use("/auth", authRoutes);
+apiRouter.use("/catalog", publicApiLimiter, publicCatalogRoutes);
+apiRouter.use("/public/cake-builder", publicApiLimiter, publicCakeRoutes);
+apiRouter.use("/public", publicApiLimiter, publicOrdersRoutes);
 
-// Auth (ya tiene rate limiting específico en cada endpoint)
-app.use("/auth", authRoutes);
+// Admin (protegido)
+apiRouter.use("/admin", requireAuth, adminApiLimiter);
+apiRouter.use("/admin/customers", adminCustomersRoutes);
+apiRouter.use("/admin/orders", adminOrdersRoutes);
+apiRouter.use("/admin/reports", adminReportsRoutes);
+apiRouter.use("/admin/users", adminUsersRoutes);
+apiRouter.use("/admin/products", adminProductsRoutes);
+apiRouter.use("/admin/supplies", adminSuppliesRoutes);
+apiRouter.use("/admin/cake", adminCakeRoutes);
 
-// Catálogo público (rate limiting para prevenir scraping)
-app.use("/catalog", publicApiLimiter, publicCatalogRoutes);
+// Montar API en raíz y en /dulcemaria (para robustez con Passenger)
+app.use("/", apiRouter);
+app.use("/dulcemaria", apiRouter);
 
-// Admin (portal) — protegido + rate limiting
-app.use("/admin", requireAuth, adminApiLimiter);
-app.use("/admin/customers", adminCustomersRoutes);
-app.use("/admin/orders", adminOrdersRoutes);
-app.use("/admin/reports", adminReportsRoutes);
-app.use("/admin/users", adminUsersRoutes);
-app.use("/admin/products", adminProductsRoutes);
 
-// 404 (incluye path para debug)
+// ==========================================
+// SERVIR FRONTEND ESTÁTICO (Rutas Absolutas)
+// ==========================================
+
+const PATH_BASE = "/home/hernanci/public_html/hrcastell.com/dulcemaria";
+const PATH_PORTAL = path.join(PATH_BASE, "portal");
+const PATH_SITE = path.join(PATH_BASE, "site");
+
+// Función para servir SPA
+const serveSpa = (folderPath) => (req, res) => {
+  res.sendFile(path.join(folderPath, "index.html"), (err) => {
+    if (err && !res.headersSent) res.status(404).send("File not found");
+  });
+};
+
+// 1. Portal Admin
+app.use("/portal", express.static(PATH_PORTAL));
+app.use("/dulcemaria/portal", express.static(PATH_PORTAL));
+
+// SPA Fallback para Portal
+app.get("/portal/*", serveSpa(PATH_PORTAL));
+app.get("/dulcemaria/portal/*", serveSpa(PATH_PORTAL));
+
+// 2. Sitio Web
+app.use("/site", express.static(PATH_SITE));
+app.use("/dulcemaria/site", express.static(PATH_SITE));
+
+// 3. Redirecciones Raíz
+app.get("/", (req, res) => res.redirect("site"));
+app.get("/dulcemaria", (req, res) => res.redirect("dulcemaria/site"));
+app.get("/dulcemaria/", (req, res) => res.redirect("site"));
+
+// ==========================================
+
+// 404 (Solo si no coincidió con nada anterior)
 app.use((req, res) =>
   res.status(404).json({
     ok: false,

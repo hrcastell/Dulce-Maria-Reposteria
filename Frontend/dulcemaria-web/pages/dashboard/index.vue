@@ -96,6 +96,38 @@
             </div>
           </NuxtLink>
 
+          <!-- Insumos y Gastos -->
+          <NuxtLink
+            to="/dashboard/supplies"
+            class="card hover:shadow-lg transition-shadow cursor-pointer"
+          >
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <span class="text-4xl">🧂</span>
+              </div>
+              <div class="ml-4">
+                <h3 class="text-lg font-semibold text-gray-900">Insumos y Gastos</h3>
+                <p class="text-sm text-gray-600">Control de costos y gastos</p>
+              </div>
+            </div>
+          </NuxtLink>
+
+          <!-- Tortas Personalizadas -->
+          <NuxtLink
+            to="/dashboard/cake-builder"
+            class="card hover:shadow-lg transition-shadow cursor-pointer"
+          >
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <span class="text-4xl">🎂</span>
+              </div>
+              <div class="ml-4">
+                <h3 class="text-lg font-semibold text-gray-900">Tortas Personalizadas</h3>
+                <p class="text-sm text-gray-600">Configurar opciones y ver pedidos</p>
+              </div>
+            </div>
+          </NuxtLink>
+
           <!-- Usuarios (solo para admin principal) -->
           <NuxtLink
             v-if="user?.email === 'hernan.castellanos@hrcastell.com'"

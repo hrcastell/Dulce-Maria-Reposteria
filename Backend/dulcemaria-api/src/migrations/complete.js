@@ -209,6 +209,166 @@ async function runCompleteMigrations() {
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
 
     // ============================================
+    // Tabla: product_variants
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS product_variants (
+      id UUID PRIMARY KEY,
+      product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      price_override_clp INT,
+      stock_qty INT NOT NULL DEFAULT 0 CHECK (stock_qty >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);`,
+    `DROP TRIGGER IF EXISTS trg_product_variants_updated_at ON product_variants;`,
+    `CREATE TRIGGER trg_product_variants_updated_at
+      BEFORE UPDATE ON product_variants
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // ============================================
+    // Tabla: supplies (insumos)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS supplies (
+      id UUID PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      unit VARCHAR(50),
+      last_price_clp INT,
+      last_updated TIMESTAMPTZ,
+      notes TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_supplies_name ON supplies(name);`,
+    `DROP TRIGGER IF EXISTS trg_supplies_updated_at ON supplies;`,
+    `CREATE TRIGGER trg_supplies_updated_at
+      BEFORE UPDATE ON supplies
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // ============================================
+    // Tabla: expense_records (gastos)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS expense_records (
+      id UUID PRIMARY KEY,
+      supply_id UUID REFERENCES supplies(id) ON DELETE SET NULL,
+      description VARCHAR(300) NOT NULL,
+      amount_clp INT NOT NULL CHECK (amount_clp > 0),
+      expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_expense_records_date ON expense_records(expense_date);`,
+
+    // ============================================
+    // Tablas: cake builder
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS cake_config_category (
+      id UUID PRIMARY KEY,
+      type VARCHAR(50) NOT NULL,
+      label VARCHAR(100) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS cake_config_option (
+      id UUID PRIMARY KEY,
+      category_id UUID NOT NULL REFERENCES cake_config_category(id) ON DELETE CASCADE,
+      label VARCHAR(100) NOT NULL,
+      description VARCHAR(300),
+      extra_price_clp INT NOT NULL DEFAULT 0,
+      is_default BOOLEAN NOT NULL DEFAULT false,
+      diameter_cm INT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cake_config_option_category ON cake_config_option(category_id);`,
+    `CREATE TABLE IF NOT EXISTS cake_orders (
+      id UUID PRIMARY KEY,
+      order_number VARCHAR(30) UNIQUE NOT NULL,
+      customer_name VARCHAR(200) NOT NULL,
+      customer_email VARCHAR(200),
+      customer_phone VARCHAR(50),
+      customer_address TEXT,
+      size_option_id UUID REFERENCES cake_config_option(id),
+      layers_option_id UUID REFERENCES cake_config_option(id),
+      sponge_option_id UUID REFERENCES cake_config_option(id),
+      filling_option_id UUID REFERENCES cake_config_option(id),
+      decoration_option_id UUID REFERENCES cake_config_option(id),
+      base_price_clp INT NOT NULL DEFAULT 0,
+      extras_price_clp INT NOT NULL DEFAULT 0,
+      total_price_clp INT NOT NULL DEFAULT 0,
+      deposit_clp INT NOT NULL DEFAULT 0,
+      notes TEXT,
+      status VARCHAR(30) NOT NULL DEFAULT 'PENDING_PAYMENT',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cake_orders_status ON cake_orders(status);`,
+
+    // Seed categorías iniciales del cake builder (idempotente)
+    `INSERT INTO cake_config_category (id, type, label, sort_order, is_active)
+     VALUES
+       ('00000000-0000-0000-0001-000000000001', 'SIZE',       'Tamaño',      1, true),
+       ('00000000-0000-0000-0001-000000000002', 'LAYERS',     'Capas',       2, true),
+       ('00000000-0000-0000-0001-000000000003', 'SPONGE',     'Bizcocho',    3, true),
+       ('00000000-0000-0000-0001-000000000004', 'FILLING',    'Relleno',     4, true),
+       ('00000000-0000-0000-0001-000000000005', 'DECORATION', 'Decoración',  5, true)
+     ON CONFLICT (id) DO NOTHING;`,
+
+    // Seed opciones iniciales (idempotente)
+    `INSERT INTO cake_config_option (id, category_id, label, extra_price_clp, is_default, diameter_cm, sort_order)
+     VALUES
+       ('00000000-0000-0000-0002-000000000001', '00000000-0000-0000-0001-000000000001', '10 pulgadas',   0,     true,  25, 1),
+       ('00000000-0000-0000-0002-000000000002', '00000000-0000-0000-0001-000000000001', '16 pulgadas',   15000, false, 40, 2),
+       ('00000000-0000-0000-0002-000000000003', '00000000-0000-0000-0001-000000000001', '20 pulgadas',   25000, false, 50, 3),
+       ('00000000-0000-0000-0002-000000000004', '00000000-0000-0000-0001-000000000001', '24 pulgadas',   35000, false, 60, 4),
+       ('00000000-0000-0000-0002-000000000005', '00000000-0000-0000-0001-000000000002', '1 capa',        0,     true,  null, 1),
+       ('00000000-0000-0000-0002-000000000006', '00000000-0000-0000-0001-000000000002', '2 capas',       8000,  false, null, 2),
+       ('00000000-0000-0000-0002-000000000007', '00000000-0000-0000-0001-000000000002', '3 capas',       15000, false, null, 3),
+       ('00000000-0000-0000-0002-000000000008', '00000000-0000-0000-0001-000000000003', 'Vainilla',      0,     true,  null, 1),
+       ('00000000-0000-0000-0002-000000000009', '00000000-0000-0000-0001-000000000003', 'Chocolate',     3000,  false, null, 2),
+       ('00000000-0000-0000-0002-000000000010', '00000000-0000-0000-0001-000000000003', 'Red Velvet',    5000,  false, null, 3),
+       ('00000000-0000-0000-0002-000000000011', '00000000-0000-0000-0001-000000000004', 'Manjar',        0,     true,  null, 1),
+       ('00000000-0000-0000-0002-000000000012', '00000000-0000-0000-0001-000000000004', 'Ganash chocolate', 4000, false, null, 2),
+       ('00000000-0000-0000-0002-000000000013', '00000000-0000-0000-0001-000000000004', 'Crema Bariloche', 4000, false, null, 3),
+       ('00000000-0000-0000-0002-000000000014', '00000000-0000-0000-0001-000000000005', 'Decoración estándar', 0, true, null, 1),
+       ('00000000-0000-0000-0002-000000000015', '00000000-0000-0000-0001-000000000005', 'Decoración temática', 10000, false, null, 2)
+     ON CONFLICT (id) DO NOTHING;`,
+
+    // ============================================
+    // FIX: Agregar order_code a orders si no existe
+    // ============================================
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='orders' AND column_name='order_code'
+      ) THEN
+        ALTER TABLE orders ADD COLUMN order_code TEXT;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+
+    // ============================================
+    // FIX: orders.status constraint — incluir PENDING_PAYMENT
+    // ============================================
+    `ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'orders_status_check_v2' AND conrelid = 'orders'::regclass
+      ) THEN
+        ALTER TABLE orders ADD CONSTRAINT orders_status_check_v2
+          CHECK (status IN ('PENDING_PAYMENT','PENDING_CONFIRMATION','CONFIRMED','PAID','PREPARING','READY','DELIVERED','CANCELLED'));
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+
+    // ============================================
     // FIX: UNIQUE constraint en customers.email
     // ============================================
 
@@ -233,12 +393,15 @@ async function runCompleteMigrations() {
     let successCount = 0;
     for (let i = 0; i < statements.length; i++) {
       const stmt = statements[i];
+      const sp = `sp_mig_${i}`;
       try {
+        await client.query(`SAVEPOINT ${sp}`);
         await client.query(stmt);
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
         successCount++;
       } catch (stmtError) {
-        // Algunos errores son esperables (ej: constraint ya eliminado)
-        // Solo loguear, no fallar
+        // Rollback al savepoint para no abortar la transacción completa
+        await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
         console.warn(`⚠️  Warning on statement ${i + 1}:`, stmtError.message);
       }
     }
