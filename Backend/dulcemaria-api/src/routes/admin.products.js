@@ -63,9 +63,10 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT id, name, slug, description, price_clp, stock_qty, is_active, created_at, updated_at
-       FROM products
-       ORDER BY created_at DESC`
+      `SELECT p.id, p.name, p.slug, p.description, p.price_clp, p.stock_qty, p.is_active, p.created_at, p.updated_at,
+              (SELECT url_thumb FROM product_images WHERE product_id=p.id AND is_primary=true ORDER BY sort_order ASC LIMIT 1) AS thumb_url
+       FROM products p
+       ORDER BY p.created_at DESC`
     );
     res.json({ ok: true, items: r.rows });
   } catch (e) {
@@ -112,7 +113,10 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+/**
+ * Función compartida para actualizar productos (PUT y PATCH)
+ */
+const updateProductHandler = async (req, res) => {
   const schema = z.object({
     name: z.string().min(2).optional(),
     description: z.string().optional().nullable(),
@@ -172,7 +176,10 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
-});
+};
+
+router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), updateProductHandler);
+router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), updateProductHandler);
 
 // ===== Images =====
 router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
@@ -257,6 +264,43 @@ router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), val
     await pool.query(`UPDATE product_images SET is_primary=true WHERE id=$1`, [imageId]);
 
     res.json({ ok: true, message: "Imagen marcada como principal", imageId, productId });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * DELETE /admin/products/:id
+ * Elimina producto completo
+ */
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const pool = getPool();
+
+    const exists = await pool.query("SELECT 1 FROM products WHERE id=$1 LIMIT 1", [id]);
+    if (exists.rowCount === 0) return res.status(404).json({ ok: false, error: "Producto no encontrado" });
+
+    // Verificar si tiene items en órdenes
+    const orders = await pool.query("SELECT 1 FROM order_items WHERE product_id=$1 LIMIT 1", [id]);
+    if (orders.rowCount > 0) {
+      return res.status(409).json({ ok: false, error: "No se puede eliminar un producto con órdenes asociadas" });
+    }
+
+    // Eliminar imágenes asociadas
+    const images = await pool.query("SELECT url_original FROM product_images WHERE product_id=$1", [id]);
+    for (const img of images.rows) {
+      try {
+        const rel = String(img.url_original).replace(/^\/uploads\//, "");
+        const abs = path.join(UPLOADS_DIR, rel);
+        fs.unlinkSync(abs);
+      } catch {}
+    }
+
+    await pool.query("DELETE FROM product_images WHERE product_id=$1", [id]);
+    await pool.query("DELETE FROM products WHERE id=$1", [id]);
+
+    res.json({ ok: true, message: "Producto eliminado", productId: id });
   } catch (e) {
     next(e);
   }

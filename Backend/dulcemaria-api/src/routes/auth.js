@@ -5,6 +5,7 @@ const { z } = require("zod");
 const { getPool } = require("../db");
 const { verifyPassword } = require("../utils/password");
 const { loginLimiter, bootstrapLimiter } = require("../middleware/rate-limit");
+const { requireAuth } = require("../middleware/auth");
 
 const crypto = require("crypto");
 const { hashPassword } = require("../utils/password");
@@ -62,6 +63,29 @@ router.post("/login", loginLimiter, async (req, res) => {
     );
 
     return res.json({ ok: true, token, user: { id: user.id, email: user.email, role: user.role } });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+// Obtener información del usuario actual
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT id, email, full_name, role, is_active, permissions, created_at
+       FROM users
+       WHERE id=$1
+       LIMIT 1`,
+      [req.user.sub]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+    }
+
+    const user = r.rows[0];
+    return res.json({ ok: true, user });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

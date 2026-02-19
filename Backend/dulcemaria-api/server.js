@@ -50,8 +50,11 @@ app.use(helmet());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("combined"));
 
-// Servir archivos subidos
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Servir archivos subidos con CORP permisivo para permitir carga cross-origin
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+}, express.static(path.join(__dirname, "uploads")));
 
 // Health
 app.get("/health", (req, res) => {

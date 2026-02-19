@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dulce María Repostería</title>
+  <!-- Tailwind CSS desde CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            turquoise: {
+              100: '#d0f3f3',
+              500: '#40cece',
+              600: '#2fb8b8',
+            },
+            pastel: {
+              blue: '#E3F2FD',
+              'blue-dark': '#BBDEFB',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Tus scripts sin módulos -->
+  <script src="js/cart.js" defer></script>
+  <script src="js/carousel.js" defer></script>
+</head>
+<body class="bg-blue-50">
+    <!-- Navbar -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-sm shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-12">
+                </div>
+                <div class="hidden md:flex space-x-8">
+                    <a href="#inicio" class="text-turquoise-600 hover:text-pink-400 transition-colors">Inicio</a>
+                    <a href="#catalogo" class="text-turquoise-600 hover:text-pink-400 transition-colors">Catálogo</a>
+                    <a href="#personalizar" class="text-turquoise-600 hover:text-pink-400 transition-colors">Personalizar</a>
+                    <a href="#contacto" class="text-turquoise-600 hover:text-pink-400 transition-colors">Contacto</a>
+                </div>
+                <button onclick="toggleCart()" class="relative p-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span id="cart-count" class="absolute -top-1 -right-1 bg-pink-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section with Carousel -->
+    <section id="inicio" class="pt-16">
+        <div class="carousel relative h-[600px] overflow-hidden">
+            <!-- Slide 1 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
+                <div class="relative h-full bg-gradient-to-r from-blue-100 via-pink-100 to-turquoise-100">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="text-center px-4">
+                            <h1 class="text-5xl font-bold text-pink-500 mb-6">¡Ofertas Especiales!</h1>
+                            <p class="text-2xl text-turquoise-600 mb-8">30% de descuento en tortas personalizadas</p>
+                            <button class="bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-400 transition-colors">
+                                Ver Ofertas
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 2 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
+                <div class="relative h-full bg-gradient-to-r from-pink-100 via-turquoise-100 to-blue-100">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="text-center px-4">
+                            <h1 class="text-5xl font-bold text-turquoise-600 mb-6">Cupcakes Artesanales</h1>
+                            <p class="text-2xl text-pink-500 mb-8">¡Nuevos sabores cada semana!</p>
+                            <button class="bg-turquoise-600 text-white px-8 py-3 rounded-lg hover:bg-turquoise-500 transition-colors">
+                                Ver Catálogo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 3 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
+                <div class="relative h-full bg-gradient-to-r from-turquoise-100 via-blue-100 to-pink-100">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="text-center px-4">
+                            <h1 class="text-5xl font-bold text-blue-600 mb-6">Tortas para Eventos</h1>
+                            <p class="text-2xl text-pink-500 mb-8">Diseños únicos para momentos especiales</p>
+                            <button class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-500 transition-colors">
+                                Personalizar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Carousel Controls -->
+            <div class="carousel-controls">
+                <button onclick="prevSlide()" class="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/80 p-2 rounded-full shadow-lg hover:bg-white transition-colors z-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <button onclick="nextSlide()" class="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/80 p-2 rounded-full shadow-lg hover:bg-white transition-colors z-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Carousel Indicators -->
+            <div class="carousel-indicators absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2 z-20">
+                <button onclick="showSlide(0)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
+                <button onclick="showSlide(1)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
+                <button onclick="showSlide(2)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Catálogo Section -->
+    <section id="catalogo" class="py-16 bg-white">
+        <div class="max-w-7xl mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center text-pink-500 mb-12">Nuestros Productos Destacados</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="bg-blue-50 rounded-lg overflow-hidden shadow-lg">
+                    <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587" alt="Torta de Chocolate" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Torta de Chocolate</h3>
+                        <p class="text-gray-600">Deliciosa torta con tres capas de chocolate</p>
+                    </div>
+                </div>
+                <div class="bg-blue-50 rounded-lg overflow-hidden shadow-lg">
+                    <img src="https://images.unsplash.com/photo-1464349095431-e9a21285b5f3" alt="Cupcakes Variados" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Cupcakes Variados</h3>
+                        <p class="text-gray-600">Surtido de cupcakes con diferentes sabores</p>
+                    </div>
+                </div>
+                <div class="bg-blue-50 rounded-lg overflow-hidden shadow-lg">
+                    <img src="https://images.unsplash.com/photo-1571115177098-24ec42ed204d" alt="Torta de Bodas" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Tortas de Boda</h3>
+                        <p class="text-gray-600">Diseños personalizados para tu día especial</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Productos Section -->
+    <section id="productos" class="py-16 bg-white">
+        <div class="max-w-7xl mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center text-pink-500 mb-12">Nuestros Productos</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Producto 1 -->
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587" alt="Torta de Chocolate" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Torta de Chocolate</h3>
+                        <p class="text-gray-600 mb-4">Deliciosa torta con tres capas de chocolate</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-2xl font-bold text-pink-500">$35.99</span>
+                            <button onclick="addToCart({id: 1, name: 'Torta de Chocolate', price: 35.99, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587'})" 
+                                class="bg-turquoise-600 text-white px-4 py-2 rounded-lg hover:bg-turquoise-500 transition-colors">
+                                Agregar al carrito
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Producto 2 -->
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1464349095431-e9a21285b5f3" alt="Cupcakes Variados" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Cupcakes Variados</h3>
+                        <p class="text-gray-600 mb-4">Pack de 6 cupcakes surtidos</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-2xl font-bold text-pink-500">$18.99</span>
+                            <button onclick="addToCart({id: 2, name: 'Cupcakes Variados', price: 18.99, image: 'https://images.unsplash.com/photo-1464349095431-e9a21285b5f3'})" 
+                                class="bg-turquoise-600 text-white px-4 py-2 rounded-lg hover:bg-turquoise-500 transition-colors">
+                                Agregar al carrito
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Producto 3 -->
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1571115177098-24ec42ed204d" alt="Torta de Bodas" class="w-full h-64 object-cover">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-turquoise-600">Torta de Bodas</h3>
+                        <p class="text-gray-600 mb-4">Elegante torta de tres niveles</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-2xl font-bold text-pink-500">$149.99</span>
+                            <button onclick="addToCart({id: 3, name: 'Torta de Bodas', price: 149.99, image: 'https://images.unsplash.com/photo-1571115177098-24ec42ed204d'})" 
+                                class="bg-turquoise-600 text-white px-4 py-2 rounded-lg hover:bg-turquoise-500 transition-colors">
+                                Agregar al carrito
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Personalizar Section -->
+    <section id="personalizar" class="py-16 bg-gradient-to-r from-pink-100 via-blue-100 to-turquoise-100">
+        <div class="max-w-7xl mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center text-pink-500 mb-12">Personaliza tu Torta</h2>
+            <div class="bg-white rounded-lg shadow-lg p-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-2xl font-bold text-turquoise-600 mb-4">Pasos para Personalizar</h3>
+                        <ul class="space-y-4">
+                            <li class="flex items-center">
+                                <span class="bg-pink-400 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">1</span>
+                                <span>Elige el tamaño de tu torta</span>
+                            </li>
+                            <li class="flex items-center">
+                                <span class="bg-pink-400 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">2</span>
+                                <span>Selecciona el sabor y relleno</span>
+                            </li>
+                            <li class="flex items-center">
+                                <span class="bg-pink-400 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">3</span>
+                                <span>Escoge la decoración</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div>
+                        <img src="https://images.unsplash.com/photo-1621303837174-89787a7d4729" alt="Personalización de Tortas" class="rounded-lg shadow-lg">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cart Sidebar -->
+    <div id="cart-sidebar" class="fixed top-0 right-0 h-full w-96 bg-white shadow-lg transform translate-x-full transition-transform duration-300 ease-in-out z-50">
+        <div class="p-6 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-turquoise-600">Carrito de Compras</h2>
+                <button onclick="toggleCart()" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div id="cart-items" class="flex-1 overflow-y-auto">
+                <!-- Los items del carrito se insertarán aquí dinámicamente -->
+            </div>
+            <div class="border-t border-gray-200 pt-4 mt-4">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-lg font-bold">Total:</span>
+                    <span id="cart-total" class="text-2xl font-bold text-pink-500">$0.00</span>
+                </div>
+                <button class="w-full bg-turquoise-600 text-white py-3 rounded-lg hover:bg-turquoise-500 transition-colors">
+                    Proceder al pago
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer id="contacto" class="bg-pastel-blue text-gray-700 py-12">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-24 mb-4">
+                    <p class="text-lg">Hacemos tus sueños dulces realidad</p>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold mb-4 text-turquoise-600">Contacto</h3>
+                    <ul class="space-y-2">
+                        <li>📞 +1 234 567 890</li>
+                        <li>📧 info@dulcemariareposteria.com</li>
+                        <li>📍 Calle Dulce 123, Ciudad</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold mb-4 text-turquoise-600">Horario</h3>
+                    <ul class="space-y-2">
+                        <li>Lunes a Viernes: 9:00 - 20:00</li>
+                        <li>Sábados: 10:00 - 18:00</li>
+                        <li>Domingos: 10:00 - 15:00</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-8 text-center border-t border-pastel-blue-dark pt-8">
+                <p>&copy; 2025 Dulce María Repostería. Todos los derechos reservados.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
