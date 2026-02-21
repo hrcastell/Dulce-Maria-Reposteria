@@ -1,164 +1,285 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center">
-          <h1 class="text-2xl font-bold text-gray-900">Tortas Personalizadas</h1>
-          <NuxtLink to="/dashboard" class="text-sm text-primary-600 hover:text-primary-500">← Dashboard</NuxtLink>
+  <div>
+    <!-- Page Header -->
+    <div class="mb-8">
+      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Tortas Personalizadas</h1>
+      <p class="mt-1 text-warm-500">Configura opciones y gestiona pedidos de tortas personalizadas</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-6">
+      <button 
+        :class="tab === 'config' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'" 
+        class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
+        @click="tab = 'config'"
+      >
+        <span class="mr-2">⚙️</span> Configuración
+      </button>
+      <button 
+        :class="tab === 'orders' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'" 
+        class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
+        @click="tab = 'orders'"
+      >
+        <span class="mr-2">📋</span> Pedidos
+      </button>
+    </div>
+
+    <!-- ====== CONFIG TAB ====== -->
+    <div v-if="tab === 'config'">
+      <!-- Loading State -->
+      <div v-if="configLoading" class="flex flex-col items-center justify-center py-16">
+        <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin"></div>
+        <p class="mt-4 text-warm-500">Cargando configuración...</p>
+      </div>
+      <div v-else-if="configError" class="rounded-2xl bg-error-50 border border-error-100 p-6 mb-6">
+        <div class="flex items-center gap-3">
+          <span class="text-error-500 text-xl">⚠️</span>
+          <p class="text-error-700">{{ configError }}</p>
         </div>
       </div>
-    </header>
-
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <div class="px-4 sm:px-0 space-y-8">
-
-        <!-- Tabs -->
-        <div class="flex gap-2">
-          <button :class="tab === 'config' ? 'btn-primary' : 'btn-secondary'" class="text-sm" @click="tab = 'config'">⚙️ Configuración</button>
-          <button :class="tab === 'orders' ? 'btn-primary' : 'btn-secondary'" class="text-sm" @click="tab = 'orders'">📋 Pedidos</button>
-        </div>
-
-        <!-- ====== CONFIG TAB ====== -->
-        <div v-if="tab === 'config'">
-          <div v-if="configLoading" class="text-center py-12 text-gray-400">Cargando configuración...</div>
-          <div v-else-if="configError" class="rounded-md bg-red-50 p-4 text-sm text-red-800">{{ configError }}</div>
-          <div v-else class="space-y-6">
-            <div v-for="cat in categories" :key="cat.id" class="bg-white rounded-lg shadow p-5">
-              <!-- Category header -->
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center gap-3">
-                  <h3 class="text-lg font-semibold text-gray-800">{{ cat.label }}</h3>
-                  <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{{ cat.type }}</span>
-                  <label class="flex items-center gap-1 cursor-pointer">
-                    <input
-                      v-model="cat.is_active"
-                      type="checkbox"
-                      class="rounded border-gray-300 text-primary-600"
-                      @change="updateCategory(cat)"
-                    >
-                    <span class="text-xs text-gray-500">Activa</span>
-                  </label>
-                </div>
-                <button class="btn-secondary text-xs" @click="openOptionModal(cat)">+ Agregar opción</button>
-              </div>
-
-              <!-- Options table -->
-              <table class="min-w-full text-sm">
-                <thead>
-                  <tr class="text-left text-xs text-gray-500 border-b border-gray-100">
-                    <th class="pb-2 pr-4">Opción</th>
-                    <th class="pb-2 pr-4">Precio extra</th>
-                    <th class="pb-2 pr-4">Por defecto</th>
-                    <th class="pb-2 pr-4">Activa</th>
-                    <th class="pb-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="cat.options.length === 0">
-                    <td colspan="5" class="py-3 text-gray-400 text-xs">Sin opciones</td>
-                  </tr>
-                  <tr v-for="opt in cat.options" :key="opt.id" class="border-b border-gray-50">
-                    <td class="py-2 pr-4">
-                      <div class="font-medium text-gray-800">{{ opt.label }}</div>
-                      <div v-if="opt.description" class="text-xs text-gray-400">{{ opt.description }}</div>
-                    </td>
-                    <td class="py-2 pr-4">
-                      <span :class="opt.extra_price_clp > 0 ? 'text-orange-600 font-semibold' : 'text-gray-400'">
-                        {{ opt.extra_price_clp > 0 ? `+$${formatPrice(opt.extra_price_clp)}` : 'Incluido' }}
-                      </span>
-                    </td>
-                    <td class="py-2 pr-4">
-                      <span v-if="opt.is_default" class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Base</span>
-                    </td>
-                    <td class="py-2 pr-4">
-                      <input
-                        v-model="opt.is_active"
-                        type="checkbox"
-                        class="rounded border-gray-300 text-primary-600"
-                        @change="updateOption(opt)"
-                      >
-                    </td>
-                    <td class="py-2 text-right">
-                      <button class="text-primary-600 hover:text-primary-900 text-xs mr-2" @click="openOptionModal(cat, opt)">Editar</button>
-                      <button class="text-red-400 hover:text-red-600 text-base leading-none" @click="deleteOption(opt, cat)">×</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+      <div v-else class="space-y-6">
+        <div v-for="cat in categories" :key="cat.id" class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <!-- Category header -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <div class="flex items-center gap-3">
+              <h3 class="text-lg font-semibold text-warm-800">{{ cat.label }}</h3>
+              <span class="text-xs text-warm-500 bg-warm-100 px-2 py-0.5 rounded-lg">{{ cat.type }}</span>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  v-model="cat.is_active"
+                  type="checkbox"
+                  class="w-4 h-4 rounded border-warm-300 text-primary-500 focus:ring-primary-400"
+                  @change="updateCategory(cat)"
+                >
+                <span class="text-sm text-warm-600">Activa</span>
+              </label>
             </div>
-
-            <div class="card">
-              <label class="label">Precio base de torta (CLP)</label>
-              <div class="flex gap-3 items-center">
-                <input v-model.number="basePriceInput" type="number" min="0" class="input max-w-xs" placeholder="Ej: 30000">
-                <p class="text-xs text-gray-400">Este es el precio mínimo antes de agregar extras. Guárdalo en localStorage.</p>
-              </div>
-              <button class="btn-primary text-sm mt-2" @click="saveBasePrice">Guardar precio base</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ====== ORDERS TAB ====== -->
-        <div v-if="tab === 'orders'">
-          <div class="mb-4 flex gap-2">
-            <button
-              v-for="s in orderStatusFilters"
-              :key="s.value"
-              :class="orderFilter === s.value ? 'btn-primary' : 'btn-secondary'"
-              class="text-xs"
-              @click="orderFilter = s.value; loadOrders()"
-            >{{ s.label }}</button>
+            <button 
+              @click="openOptionModal(cat)"
+              class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-warm-100 hover:bg-warm-200 text-warm-700 font-medium rounded-xl transition-all duration-200 text-sm"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Agregar opción
+            </button>
           </div>
 
-          <div v-if="ordersLoading" class="text-center py-12 text-gray-400">Cargando pedidos...</div>
-          <div v-else class="bg-white shadow sm:rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Pedido</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Abono 50%</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acción</th>
+          <!-- Desktop Options Table -->
+          <div class="hidden sm:block overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs font-semibold text-warm-500 border-b border-warm-100">
+                  <th class="pb-2 pr-4">Opción</th>
+                  <th class="pb-2 pr-4">Precio extra</th>
+                  <th class="pb-2 pr-4">Por defecto</th>
+                  <th class="pb-2 pr-4">Activa</th>
+                  <th class="pb-2"></th>
                 </tr>
               </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <tr v-if="cakeOrders.length === 0">
-                  <td colspan="7" class="px-4 py-8 text-center text-gray-400">No hay pedidos</td>
+              <tbody>
+                <tr v-if="cat.options.length === 0">
+                  <td colspan="5" class="py-4 text-warm-400 text-sm">Sin opciones configuradas</td>
                 </tr>
-                <tr v-for="o in cakeOrders" :key="o.id">
-                  <td class="px-4 py-3 text-sm font-mono text-gray-700">{{ o.order_number }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-600">{{ formatDate(o.created_at) }}</td>
-                  <td class="px-4 py-3">
-                    <div class="text-sm font-medium text-gray-900">{{ o.customer_name }}</div>
-                    <div class="text-xs text-gray-400">{{ o.customer_phone }}</div>
+                <tr v-for="opt in cat.options" :key="opt.id" class="border-b border-warm-50 hover:bg-warm-50/50 transition-colors">
+                  <td class="py-3 pr-4">
+                    <div class="font-medium text-warm-800">{{ opt.label }}</div>
+                    <div v-if="opt.description" class="text-xs text-warm-400">{{ opt.description }}</div>
                   </td>
-                  <td class="px-4 py-3 text-sm font-semibold text-gray-900">${{ formatPrice(o.total_price_clp) }}</td>
-                  <td class="px-4 py-3 text-sm font-semibold text-orange-600">${{ formatPrice(o.deposit_clp) }}</td>
-                  <td class="px-4 py-3">
-                    <span :class="orderStatusClass(o.status)" class="px-2 py-1 rounded-full text-xs font-semibold">
-                      {{ orderStatusLabel(o.status) }}
+                  <td class="py-3 pr-4">
+                    <span :class="opt.extra_price_clp > 0 ? 'text-primary-600 font-semibold' : 'text-warm-400'">
+                      {{ opt.extra_price_clp > 0 ? `+$${formatPrice(opt.extra_price_clp)}` : 'Incluido' }}
                     </span>
                   </td>
-                  <td class="px-4 py-3 text-right">
-                    <select
-                      :value="o.status"
-                      class="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400"
-                      @change="changeOrderStatus(o, ($event.target as HTMLSelectElement).value)"
+                  <td class="py-3 pr-4">
+                    <span v-if="opt.is_default" class="text-xs bg-success-100 text-success-700 px-2 py-0.5 rounded-full">Base</span>
+                  </td>
+                  <td class="py-3 pr-4">
+                    <input
+                      v-model="opt.is_active"
+                      type="checkbox"
+                      class="w-4 h-4 rounded border-warm-300 text-primary-500 focus:ring-primary-400"
+                      @change="updateOption(opt)"
                     >
-                      <option v-for="s in orderStatusFilters.slice(1)" :key="s.value" :value="s.value">{{ s.label }}</option>
-                    </select>
+                  </td>
+                  <td class="py-3 text-right">
+                    <button 
+                      @click="openOptionModal(cat, opt)"
+                      class="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      Editar
+                    </button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          <!-- Mobile Options Cards -->
+          <div class="sm:hidden space-y-3">
+            <div v-if="cat.options.length === 0" class="text-center py-4 text-warm-400 text-sm">
+              Sin opciones configuradas
+            </div>
+            <div 
+              v-for="opt in cat.options" 
+              :key="opt.id" 
+              class="bg-warm-50 rounded-xl p-3 flex items-start justify-between"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-warm-800">{{ opt.label }}</span>
+                  <span v-if="opt.is_default" class="text-xs bg-success-100 text-success-700 px-2 py-0.5 rounded-full">Base</span>
+                </div>
+                <div v-if="opt.description" class="text-xs text-warm-400 mt-0.5">{{ opt.description }}</div>
+                <div class="mt-1 text-sm" :class="opt.extra_price_clp > 0 ? 'text-primary-600 font-semibold' : 'text-warm-400'">
+                  {{ opt.extra_price_clp > 0 ? `+$${formatPrice(opt.extra_price_clp)}` : 'Incluido' }}
+                </div>
+                <label class="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input
+                    v-model="opt.is_active"
+                    type="checkbox"
+                    class="w-4 h-4 rounded border-warm-300 text-primary-500 focus:ring-primary-400"
+                    @change="updateOption(opt)"
+                  >
+                  <span class="text-sm text-warm-600">Activa</span>
+                </label>
+              </div>
+              <button 
+                @click="openOptionModal(cat, opt)"
+                class="text-sm text-primary-600 hover:text-primary-700 font-medium flex-shrink-0 ml-2"
+              >
+                Editar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Base Price Card -->
+      <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+        <label class="block text-sm font-medium text-warm-700 mb-1.5">Precio base de torta (CLP)</label>
+        <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          <input 
+            v-model.number="basePriceInput" 
+            type="number" 
+            min="0" 
+            class="block w-full sm:w-48 px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" 
+            placeholder="Ej: 30000"
+          >
+          <p class="text-xs text-warm-400">Precio mínimo antes de agregar extras. Se guarda automáticamente.</p>
+        </div>
+        <button 
+          @click="saveBasePrice"
+          class="inline-flex items-center gap-2 px-4 py-2 mt-3 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 text-sm"
+        >
+          Guardar precio base
+        </button>
+      </div>
+    </div>
+
+    <!-- ====== ORDERS TAB ====== -->
+    <div v-if="tab === 'orders'">
+      <!-- Filter Tabs -->
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button
+          v-for="s in orderStatusFilters"
+          :key="s.value"
+          :class="orderFilter === s.value ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'"
+          class="px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border border-warm-200"
+          @click="orderFilter = s.value; loadOrders()"
+        >
+          {{ s.label }}
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="ordersLoading" class="flex flex-col items-center justify-center py-16">
+        <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin"></div>
+        <p class="mt-4 text-warm-500">Cargando pedidos...</p>
+      </div>
+
+      <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="min-w-full divide-y divide-warm-100">
+            <thead class="bg-warm-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">N° Pedido</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">Fecha</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">Cliente</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">Total</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">Abono 50%</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase">Estado</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-warm-600 uppercase">Acción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-warm-100">
+              <tr v-if="cakeOrders.length === 0">
+                <td colspan="7" class="px-4 py-8 text-center text-warm-400">No hay pedidos</td>
+              </tr>
+              <tr v-for="o in cakeOrders" :key="o.id" class="hover:bg-warm-50/50 transition-colors">
+                <td class="px-4 py-3 text-sm font-mono text-warm-700">{{ o.order_number }}</td>
+                <td class="px-4 py-3 text-sm text-warm-600">{{ formatDate(o.created_at) }}</td>
+                <td class="px-4 py-3">
+                  <div class="text-sm font-medium text-warm-800">{{ o.customer_name }}</div>
+                  <div class="text-xs text-warm-400">{{ o.customer_phone }}</div>
+                </td>
+                <td class="px-4 py-3 text-sm font-semibold text-warm-800">${{ formatPrice(o.total_price_clp) }}</td>
+                <td class="px-4 py-3 text-sm font-semibold text-primary-600">${{ formatPrice(o.deposit_clp) }}</td>
+                <td class="px-4 py-3">
+                  <span :class="orderStatusClass(o.status)" class="px-2 py-1 rounded-full text-xs font-medium">
+                    {{ orderStatusLabel(o.status) }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <select
+                    :value="o.status"
+                    class="text-xs border border-warm-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-white"
+                    @change="changeOrderStatus(o, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="s in orderStatusFilters.slice(1)" :key="s.value" :value="s.value">{{ s.label }}</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
+        <!-- Mobile Cards -->
+        <div class="sm:hidden space-y-3 p-4">
+          <div v-if="cakeOrders.length === 0" class="text-center py-8 text-warm-400">
+            No hay pedidos
+          </div>
+          <div v-for="o in cakeOrders" :key="o.id" class="bg-warm-50 rounded-xl p-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <span class="text-sm font-mono text-warm-700">{{ o.order_number }}</span>
+                <span class="text-xs text-warm-400 ml-2">{{ formatDate(o.created_at) }}</span>
+              </div>
+              <span :class="orderStatusClass(o.status)" class="px-2 py-1 rounded-full text-xs font-medium">
+                {{ orderStatusLabel(o.status) }}
+              </span>
+            </div>
+            <div class="mt-2">
+              <div class="text-sm font-medium text-warm-800">{{ o.customer_name }}</div>
+              <div class="text-xs text-warm-400">{{ o.customer_phone }}</div>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <div>
+                <div class="text-sm font-semibold text-warm-800">Total: ${{ formatPrice(o.total_price_clp) }}</div>
+                <div class="text-xs text-primary-600">Abono: ${{ formatPrice(o.deposit_clp) }}</div>
+              </div>
+              <select
+                :value="o.status"
+                class="text-xs border border-warm-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-white"
+                @change="changeOrderStatus(o, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="s in orderStatusFilters.slice(1)" :key="s.value" :value="s.value">{{ s.label }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
 
     <!-- Option Modal -->
     <Modal
@@ -169,44 +290,80 @@
     >
       <div class="space-y-4">
         <div>
-          <label class="label">Nombre *</label>
-          <input v-model="optionForm.label" type="text" class="input" placeholder="Ej: Chocolate">
+          <label class="block text-sm font-medium text-warm-700 mb-1.5">Nombre *</label>
+          <input 
+            v-model="optionForm.label" 
+            type="text" 
+            class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" 
+            placeholder="Ej: Chocolate"
+          >
         </div>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="label">Precio extra (CLP)</label>
-            <input v-model.number="optionForm.extra_price_clp" type="number" min="0" class="input" placeholder="0 = incluido">
+            <label class="block text-sm font-medium text-warm-700 mb-1.5">Precio extra (CLP)</label>
+            <input 
+              v-model.number="optionForm.extra_price_clp" 
+              type="number" 
+              min="0" 
+              class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" 
+              placeholder="0 = incluido"
+            >
           </div>
           <div v-if="selectedCategory?.type === 'SIZE'">
-            <label class="label">Diámetro (cm)</label>
-            <input v-model.number="optionForm.diameter_cm" type="number" min="1" class="input" placeholder="Ej: 25">
+            <label class="block text-sm font-medium text-warm-700 mb-1.5">Diámetro (cm)</label>
+            <input 
+              v-model.number="optionForm.diameter_cm" 
+              type="number" 
+              min="1" 
+              class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" 
+              placeholder="Ej: 25"
+            >
           </div>
         </div>
         <div>
-          <label class="label">Descripción</label>
-          <input v-model="optionForm.description" type="text" class="input" placeholder="Descripción opcional">
+          <label class="block text-sm font-medium text-warm-700 mb-1.5">Descripción</label>
+          <input 
+            v-model="optionForm.description" 
+            type="text" 
+            class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" 
+            placeholder="Descripción opcional"
+          >
         </div>
-        <div class="flex items-center gap-4">
+        <div class="flex flex-wrap items-center gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input v-model="optionForm.is_default" type="checkbox" class="rounded border-gray-300 text-primary-600">
-            <span class="text-sm text-gray-700">Incluido en precio base</span>
+            <input 
+              v-model="optionForm.is_default" 
+              type="checkbox" 
+              class="w-4 h-4 rounded border-warm-300 text-primary-500 focus:ring-primary-400"
+            >
+            <span class="text-sm text-warm-700">Incluido en precio base</span>
           </label>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input v-model="optionForm.is_active" type="checkbox" class="rounded border-gray-300 text-primary-600">
-            <span class="text-sm text-gray-700">Activa</span>
+            <input 
+              v-model="optionForm.is_active" 
+              type="checkbox" 
+              class="w-4 h-4 rounded border-warm-300 text-primary-500 focus:ring-primary-400"
+            >
+            <span class="text-sm text-warm-700">Activa</span>
           </label>
         </div>
-        <div v-if="optionFormError" class="text-sm text-red-600 bg-red-50 rounded p-2">{{ optionFormError }}</div>
+        <div v-if="optionFormError" class="text-sm text-error-600 bg-error-50 rounded-lg p-3">{{ optionFormError }}</div>
       </div>
     </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-const api = useApi()
+definePageMeta({
+  layout: 'dashboard',
+  middleware: 'auth'
+})
 
-definePageMeta({ middleware: 'auth' })
-useHead({ title: 'Tortas Personalizadas' })
+useHead({
+  title: 'Tortas Personalizadas | Dulce María'
+})
+
+const api = useApi()
 
 const tab = ref<'config' | 'orders'>('config')
 
@@ -336,13 +493,13 @@ const orderStatusFilters = [
 
 const orderStatusLabel = (s: string) => orderStatusFilters.find(f => f.value === s)?.label ?? s
 const orderStatusClass = (s: string) => ({
-  PENDING_PAYMENT: 'bg-orange-100 text-orange-800',
-  CONFIRMED: 'bg-blue-100 text-blue-800',
-  IN_PROGRESS: 'bg-purple-100 text-purple-800',
-  READY: 'bg-green-100 text-green-800',
-  DELIVERED: 'bg-gray-100 text-gray-700',
-  CANCELLED: 'bg-red-100 text-red-800',
-}[s] ?? 'bg-gray-100 text-gray-700')
+  PENDING_PAYMENT: 'bg-warning-100 text-warning-700',
+  CONFIRMED: 'bg-info-100 text-info-700',
+  IN_PROGRESS: 'bg-primary-100 text-primary-700',
+  READY: 'bg-success-100 text-success-700',
+  DELIVERED: 'bg-warm-100 text-warm-700',
+  CANCELLED: 'bg-error-100 text-error-700',
+}[s] ?? 'bg-warm-100 text-warm-700')
 
 const loadOrders = async () => {
   ordersLoading.value = true

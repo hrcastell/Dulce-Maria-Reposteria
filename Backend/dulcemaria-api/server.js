@@ -88,7 +88,7 @@ apiRouter.get("/health", (req, res) => {
 apiRouter.use("/auth", authRoutes);
 apiRouter.use("/catalog", publicApiLimiter, publicCatalogRoutes);
 apiRouter.use("/public/cake-builder", publicApiLimiter, publicCakeRoutes);
-apiRouter.use("/public", publicApiLimiter, publicOrdersRoutes);
+apiRouter.use("/public/orders", publicApiLimiter, publicOrdersRoutes);
 
 // Admin (protegido)
 apiRouter.use("/admin", requireAuth, adminApiLimiter);

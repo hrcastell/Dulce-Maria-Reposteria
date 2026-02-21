@@ -1,64 +1,67 @@
 <template>
   <div class="space-y-4">
-    <div v-if="error" class="rounded-md bg-red-50 p-4">
-      <p class="text-sm text-red-800">{{ error }}</p>
+    <div v-if="error" class="rounded-xl bg-error-50 p-4 border border-error-100">
+      <p class="text-sm text-error-700">{{ error }}</p>
     </div>
 
     <div>
-      <label class="label">Nombre *</label>
+      <label class="block text-sm font-medium text-warm-700 mb-1">Nombre *</label>
       <input
         v-model="form.name"
         type="text"
         required
-        class="input"
+        class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
         placeholder="Ej: Torta de Chocolate"
       >
     </div>
 
     <div>
-      <label class="label">Descripción</label>
+      <label class="block text-sm font-medium text-warm-700 mb-1">Descripción</label>
       <textarea
         v-model="form.description"
         rows="3"
-        class="input"
+        class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
         placeholder="Descripción del producto"
       ></textarea>
     </div>
 
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <label class="label">Precio (CLP) *</label>
-        <input
-          v-model.number="form.price_clp"
-          type="number"
-          required
-          min="0"
-          class="input"
-          placeholder="15000"
-        >
+        <label class="block text-sm font-medium text-warm-700 mb-1">Precio (CLP) *</label>
+        <div class="relative">
+          <span class="absolute left-4 top-1/2 -translate-y-1/2 text-warm-400">$</span>
+          <input
+            v-model.number="form.price_clp"
+            type="number"
+            required
+            min="0"
+            class="block w-full pl-8 pr-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+            placeholder="15000"
+          >
+        </div>
       </div>
 
       <div>
-        <label class="label">Stock *</label>
+        <label class="block text-sm font-medium text-warm-700 mb-1">Stock *</label>
         <input
           v-model.number="form.stock_qty"
           type="number"
           required
           min="0"
-          class="input"
+          class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
           placeholder="20"
         >
       </div>
     </div>
 
-    <div>
-      <label class="flex items-center">
+    <div class="flex items-center p-4 bg-warm-50 rounded-xl border border-warm-100">
+      <label class="flex items-center cursor-pointer select-none w-full">
         <input
           v-model="form.is_active"
           type="checkbox"
-          class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          class="w-5 h-5 rounded border-warm-300 text-primary-600 focus:ring-primary-500 transition-colors"
         >
-        <span class="ml-2 text-sm text-gray-700">Producto activo</span>
+        <span class="ml-3 text-sm font-medium text-warm-700">Producto activo (visible en catálogo)</span>
       </label>
     </div>
 
@@ -70,20 +73,25 @@
     />
 
     <!-- Variantes -->
-    <div>
-      <label class="flex items-center gap-2 cursor-pointer mb-2">
-        <input
-          v-model="hasVariants"
-          type="checkbox"
-          class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-        >
-        <span class="text-sm text-gray-700 font-medium">Este producto tiene variantes (sabores, presentaciones, etc.)</span>
+    <div class="pt-4 border-t border-warm-100">
+      <label class="flex items-center gap-3 cursor-pointer mb-4 select-none">
+        <div class="relative inline-flex items-center cursor-pointer">
+          <input 
+            v-model="hasVariants" 
+            type="checkbox" 
+            class="sr-only peer"
+          >
+          <div class="w-11 h-6 bg-warm-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+        </div>
+        <span class="text-sm font-medium text-warm-700">Habilitar variantes</span>
       </label>
-      <ProductVariants
-        v-if="hasVariants"
-        ref="variantsRef"
-        :product-id="product?.id"
-      />
+      
+      <div v-if="hasVariants" class="animate-fadeIn">
+        <ProductVariants
+          ref="variantsRef"
+          :product-id="product?.id"
+        />
+      </div>
     </div>
   </div>
 </template>

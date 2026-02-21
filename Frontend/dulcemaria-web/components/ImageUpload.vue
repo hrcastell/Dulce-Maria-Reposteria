@@ -1,10 +1,10 @@
 <template>
   <div class="space-y-4">
     <div>
-      <label class="label">Imágenes del Producto</label>
-      <p class="text-xs text-gray-500 mb-2">Sube hasta 5 imágenes. Formatos: JPG, PNG, WEBP (máx 5MB c/u)</p>
+      <label class="block text-sm font-medium text-warm-700 mb-2">Imágenes del Producto</label>
+      <p class="text-xs text-warm-500 mb-3">Sube hasta 5 imágenes. Formatos: JPG, PNG, WEBP (máx 5MB c/u)</p>
       
-      <div class="flex gap-2 mb-3">
+      <div class="flex flex-wrap gap-3 mb-4">
         <input
           ref="fileInput"
           type="file"
@@ -16,48 +16,48 @@
         
         <button
           type="button"
-          class="btn-secondary text-sm"
+          class="inline-flex items-center gap-2 px-4 py-2.5 bg-warm-100 hover:bg-warm-200 text-warm-700 text-sm font-medium rounded-xl transition-colors"
           @click="$refs.fileInput.click()"
         >
-          📁 Seleccionar Archivos
+          <span class="text-lg">📁</span> Seleccionar Archivos
         </button>
         
         <button
           v-if="supportsCamera"
           type="button"
-          class="btn-secondary text-sm"
+          class="inline-flex items-center gap-2 px-4 py-2.5 bg-warm-100 hover:bg-warm-200 text-warm-700 text-sm font-medium rounded-xl transition-colors"
           @click="openCamera"
         >
-          📷 Tomar Foto
+          <span class="text-lg">📷</span> Tomar Foto
         </button>
       </div>
 
-      <div v-if="error" class="rounded-md bg-red-50 p-3 mb-3">
-        <p class="text-sm text-red-800">{{ error }}</p>
+      <div v-if="error" class="rounded-xl bg-error-50 p-4 mb-4 border border-error-100">
+        <p class="text-sm text-error-700">{{ error }}</p>
       </div>
 
-      <div v-if="images.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div v-if="images.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         <div
           v-for="(img, idx) in images"
           :key="idx"
-          class="relative group border-2 rounded-lg overflow-hidden"
-          :class="img.isPrimary ? 'border-primary-500' : 'border-gray-300'"
+          class="relative group aspect-square rounded-xl overflow-hidden border-2 transition-all"
+          :class="img.isPrimary ? 'border-primary-500 ring-2 ring-primary-200' : 'border-warm-200 hover:border-warm-300'"
         >
           <img
             :src="img.preview"
             :alt="`Imagen ${idx + 1}`"
-            class="w-full h-32 object-cover"
+            class="w-full h-full object-cover"
           >
           
-          <div v-if="img.deleting" class="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center">
-            <span class="text-white text-xs">Eliminando...</span>
+          <div v-if="img.deleting" class="absolute inset-0 bg-warm-900/60 flex items-center justify-center">
+            <span class="text-white text-xs font-medium">Eliminando...</span>
           </div>
 
-          <div v-else class="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+          <div v-else class="absolute inset-0 bg-warm-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
             <button
               v-if="!img.isPrimary"
               type="button"
-              class="bg-white text-gray-800 px-2 py-1 rounded text-xs hover:bg-gray-100"
+              class="w-full bg-white text-warm-800 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-warm-50 transition-colors shadow-sm"
               @click="setPrimary(idx)"
               title="Marcar como principal"
             >
@@ -65,24 +65,24 @@
             </button>
             <button
               type="button"
-              class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700"
+              class="w-full bg-error-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-error-600 transition-colors shadow-sm"
               @click="removeImage(idx)"
             >
               🗑️ Eliminar
             </button>
           </div>
 
-          <div v-if="img.isPrimary" class="absolute top-1 left-1 bg-primary-600 text-white text-xs px-2 py-0.5 rounded">
+          <div v-if="img.isPrimary" class="absolute top-2 left-2 bg-primary-500 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-sm uppercase tracking-wide">
             Principal
           </div>
 
-          <div v-if="img.uploading" class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center">
-            <div class="text-sm text-gray-700">Subiendo...</div>
+          <div v-if="img.uploading" class="absolute inset-0 bg-white/80 flex items-center justify-center backdrop-blur-sm">
+            <div class="text-xs font-medium text-warm-600">Subiendo...</div>
           </div>
         </div>
       </div>
 
-      <div v-else class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-500">
+      <div v-else class="border-2 border-dashed border-warm-200 rounded-xl p-8 text-center text-warm-400 bg-warm-50/50">
         <p>No hay imágenes. Selecciona archivos o toma una foto.</p>
       </div>
     </div>
@@ -95,13 +95,14 @@
       @submit="capturePhoto"
     >
       <div class="space-y-3">
-        <video
-          ref="videoElement"
-          autoplay
-          playsinline
-          class="w-full rounded-lg bg-black"
-          style="max-height: 400px;"
-        ></video>
+        <div class="relative rounded-xl overflow-hidden bg-black aspect-[3/4] sm:aspect-video">
+          <video
+            ref="videoElement"
+            autoplay
+            playsinline
+            class="w-full h-full object-cover"
+          ></video>
+        </div>
         <canvas ref="canvasElement" class="hidden"></canvas>
       </div>
     </Modal>

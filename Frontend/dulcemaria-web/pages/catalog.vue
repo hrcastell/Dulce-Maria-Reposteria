@@ -16,12 +16,10 @@
 
     <!-- Content -->
     <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <!-- Loading State -->
       <div v-if="loading" class="flex justify-center items-center py-12">
         <div class="text-gray-500">Cargando productos...</div>
       </div>
 
-      <!-- Error State -->
       <div v-else-if="error" class="rounded-md bg-red-50 p-4 mx-4">
         <div class="flex">
           <div class="ml-3">
@@ -32,7 +30,6 @@
         </div>
       </div>
 
-      <!-- Products Grid -->
       <div v-else-if="products.length > 0" class="px-4 py-6">
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div
@@ -79,7 +76,6 @@
         </div>
       </div>
 
-      <!-- Empty State -->
       <div v-else class="text-center py-12">
         <p class="text-gray-500">No hay productos disponibles en este momento.</p>
       </div>
