@@ -148,6 +148,7 @@ const navItems = [
   { path: '/dashboard/customers', label: 'Clientes', icon: '👥' },
   { path: '/dashboard/supplies', label: 'Insumos', icon: '🧂' },
   { path: '/dashboard/cake-builder', label: 'Tortas', icon: '🎂' },
+  { path: '/dashboard/hero', label: 'Banners', icon: '🖼️' },
   { path: '/dashboard/reports', label: 'Reportes', icon: '📈' },
 ]
 

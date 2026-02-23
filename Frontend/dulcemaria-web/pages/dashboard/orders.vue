@@ -63,6 +63,7 @@
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">#</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Cliente</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Estado</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Pago</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Total</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Fecha</th>
               <th class="px-4 py-3 text-right text-xs font-semibold text-warm-600 uppercase tracking-wider">Acciones</th>
@@ -78,6 +79,11 @@
               <td class="px-4 py-3">
                 <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
                   {{ formatStatus(order.status) }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <span :class="getPaymentStatusBadgeClass(order.payment_status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
+                  {{ formatPaymentStatus(order.payment_status) }}
                 </span>
               </td>
               <td class="px-4 py-3 text-sm font-semibold text-warm-800">${{ formatPrice(order.total_clp) }}</td>
@@ -127,9 +133,14 @@
               <p class="text-sm text-warm-600 mt-0.5">{{ order.customer_name }}</p>
               <p class="text-xs text-warm-400">{{ order.customer_email }}</p>
             </div>
-            <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
-              {{ formatStatus(order.status) }}
-            </span>
+            <div class="flex flex-col items-end gap-1">
+              <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
+                {{ formatStatus(order.status) }}
+              </span>
+              <span :class="getPaymentStatusBadgeClass(order.payment_status)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
+                {{ formatPaymentStatus(order.payment_status) }}
+              </span>
+            </div>
           </div>
           <div class="flex items-center justify-between mt-3 pt-3 border-t border-warm-100">
             <p class="font-semibold text-primary-600">${{ formatPrice(order.total_clp) }}</p>
@@ -296,6 +307,26 @@ const getStatusBadgeClass = (status: string) => {
   return colorMap[status] || 'bg-warm-100 text-warm-700'
 }
 
+const formatPaymentStatus = (status: string) => {
+  const statusMap: Record<string, string> = {
+    'PENDING': 'Pendiente',
+    'PAID': 'Pagado',
+    'FAILED': 'Fallido',
+    'REFUNDED': 'Reembolsado'
+  }
+  return statusMap[status] || status
+}
+
+const getPaymentStatusBadgeClass = (status: string) => {
+  const colorMap: Record<string, string> = {
+    'PENDING': 'bg-warning-100 text-warning-700',
+    'PAID': 'bg-success-100 text-success-700',
+    'FAILED': 'bg-error-100 text-error-700',
+    'REFUNDED': 'bg-warm-100 text-warm-700'
+  }
+  return colorMap[status] || 'bg-warm-100 text-warm-700'
+}
+
 const loadOrders = async () => {
   try {
     loading.value = true
@@ -330,7 +361,7 @@ const handleSubmitOrder = async (data: any) => {
     const response = await api.post<{ ok: boolean; order: Order }>('/admin/orders', data)
 
     if (response.ok && response.order) {
-      orders.value.unshift(response.order)
+      await loadOrders()
       showCreateModal.value = false
     }
   } catch (e: any) {

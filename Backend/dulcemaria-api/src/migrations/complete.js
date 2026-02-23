@@ -404,6 +404,27 @@ async function runCompleteMigrations() {
 
 
     // ============================================
+    // FEATURE: Hero Slides (Dynamic Carousel)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS hero_slides (
+      id UUID PRIMARY KEY,
+      title VARCHAR(200),
+      subtitle VARCHAR(300),
+      button_text VARCHAR(100),
+      button_link VARCHAR(300),
+      image_url VARCHAR(500) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_hero_slides_active_sort ON hero_slides(is_active, sort_order);`,
+    `DROP TRIGGER IF EXISTS trg_hero_slides_updated_at ON hero_slides;`,
+    `CREATE TRIGGER trg_hero_slides_updated_at
+      BEFORE UPDATE ON hero_slides
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // ============================================
     // FIX: Agregar order_code a orders si no existe
     // ============================================
     `DO $$

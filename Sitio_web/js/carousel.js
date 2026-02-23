@@ -1,11 +1,13 @@
 // Variables para el carousel
 let currentSlide = 0;
-let slides;
-let dots;
+let slides = [];
+let dots = [];
 let autoplayInterval;
 
 // Funciones del carousel
 function showSlide(index) {
+    if (!slides || slides.length === 0) return;
+
     // Ajustar el índice si se pasa de los límites
     if (index >= slides.length) {
         currentSlide = 0;
@@ -22,14 +24,18 @@ function showSlide(index) {
     });
 
     // Mostrar el slide actual
-    slides[currentSlide].style.opacity = '1';
-    slides[currentSlide].style.zIndex = '1';
+    if (slides[currentSlide]) {
+        slides[currentSlide].style.opacity = '1';
+        slides[currentSlide].style.zIndex = '1';
+    }
 
     // Actualizar los dots
-    dots.forEach((dot, idx) => {
-        dot.classList.toggle('bg-pink-500', idx === currentSlide);
-        dot.classList.toggle('bg-gray-300', idx !== currentSlide);
-    });
+    if (dots && dots.length > 0) {
+        dots.forEach((dot, idx) => {
+            dot.classList.toggle('bg-pink-500', idx === currentSlide);
+            dot.classList.toggle('bg-gray-300', idx !== currentSlide);
+        });
+    }
 }
 
 function nextSlide() {
@@ -51,11 +57,13 @@ function stopAutoplay() {
     }
 }
 
-// Inicializar el carousel cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', () => {
+// Inicializar el carousel manualmente
+function initCarousel() {
     slides = document.querySelectorAll('.carousel-slide');
     dots = document.querySelectorAll('.carousel-dot');
     
+    if (slides.length === 0) return;
+
     // Mostrar el primer slide
     showSlide(0);
     
@@ -64,11 +72,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Pausar autoplay cuando el mouse está sobre el carousel
     const carousel = document.querySelector('.carousel');
-    carousel.addEventListener('mouseenter', stopAutoplay);
-    carousel.addEventListener('mouseleave', startAutoplay);
-});
+    if (carousel) {
+        carousel.addEventListener('mouseenter', stopAutoplay);
+        carousel.addEventListener('mouseleave', startAutoplay);
+    }
+}
 
 // Exponer las funciones al scope global
 window.nextSlide = nextSlide;
 window.prevSlide = prevSlide;
 window.showSlide = showSlide;
+window.initCarousel = initCarousel;

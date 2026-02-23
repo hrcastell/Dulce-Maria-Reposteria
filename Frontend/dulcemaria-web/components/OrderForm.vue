@@ -8,22 +8,43 @@
     <!-- Customer Selection -->
     <div class="bg-white p-5 rounded-2xl border border-warm-100 shadow-sm">
       <label class="block text-sm font-semibold text-warm-700 mb-2">Cliente *</label>
-      <div class="flex gap-2">
-        <div class="relative flex-1">
-          <select 
-            v-model="form.customerId" 
-            required 
-            class="block w-full pl-4 pr-10 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all appearance-none bg-white"
-          >
-            <option value="">Seleccionar cliente...</option>
-            <option v-for="customer in customers" :key="customer.id" :value="customer.id">
-              {{ customer.full_name }} {{ customer.phone ? `• ${customer.phone}` : '' }}
-            </option>
-          </select>
+      <div class="flex gap-2 relative">
+        <div class="flex-1 relative" ref="customerDropdownRef">
+          <input
+            type="text"
+            v-model="customerSearch"
+            placeholder="Buscar cliente por nombre..."
+            class="block w-full pl-4 pr-10 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white"
+            @focus="showCustomerDropdown = true"
+            @input="showCustomerDropdown = true"
+          />
           <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-warm-400">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+
+          <!-- Dropdown List -->
+          <div 
+            v-if="showCustomerDropdown && filteredCustomers.length > 0"
+            class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg max-h-60 overflow-y-auto"
+          >
+            <div
+              v-for="customer in filteredCustomers"
+              :key="customer.id"
+              class="px-4 py-2 hover:bg-primary-50 cursor-pointer transition-colors border-b border-warm-50 last:border-0"
+              @click="selectCustomer(customer)"
+            >
+              <div class="font-medium text-warm-800">{{ customer.full_name }}</div>
+              <div class="text-xs text-warm-500">{{ customer.phone || 'Sin teléfono' }}</div>
+            </div>
+          </div>
+          <div 
+            v-else-if="showCustomerDropdown && customerSearch"
+            class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg p-4 text-center text-warm-500"
+          >
+            No se encontraron clientes
           </div>
         </div>
+
         <button 
           type="button"
           class="px-4 py-2 bg-primary-100 hover:bg-primary-200 text-primary-700 rounded-xl font-medium transition-colors flex items-center gap-2"
@@ -32,6 +53,11 @@
           <span class="text-lg leading-none">+</span>
           <span class="hidden sm:inline">Nuevo</span>
         </button>
+      </div>
+      <div v-if="selectedCustomer" class="mt-2 flex items-center gap-2 text-sm text-primary-700 bg-primary-50 px-3 py-1.5 rounded-lg inline-block">
+        <span class="font-bold">✓ Seleccionado:</span>
+        {{ selectedCustomer.full_name }}
+        <button @click="clearCustomerSelection" class="ml-2 text-primary-400 hover:text-primary-600 font-bold">×</button>
       </div>
       <p v-if="loadingCustomers" class="text-xs text-warm-400 mt-2 ml-1">Cargando clientes...</p>
     </div>
@@ -547,9 +573,43 @@ const submit = () => {
   }
 }
 
+const customerSearch = ref('')
+const showCustomerDropdown = ref(false)
+const customerDropdownRef = ref<HTMLElement | null>(null)
+
+const selectedCustomer = computed(() => {
+  return customers.value.find(c => c.id === form.value.customerId)
+})
+
+const filteredCustomers = computed(() => {
+  if (!customerSearch.value) return customers.value.slice(0, 10)
+  const lower = customerSearch.value.toLowerCase()
+  return customers.value
+    .filter(c => c.full_name.toLowerCase().includes(lower) || c.phone?.includes(lower))
+    .slice(0, 10)
+})
+
+const selectCustomer = (customer: Customer) => {
+  form.value.customerId = customer.id
+  customerSearch.value = ''
+  showCustomerDropdown.value = false
+}
+
+const clearCustomerSelection = () => {
+  form.value.customerId = ''
+  customerSearch.value = ''
+}
+
+// Close dropdown when clicking outside
 onMounted(() => {
   loadCustomers()
   loadProducts()
+  
+  document.addEventListener('click', (e) => {
+    if (customerDropdownRef.value && !customerDropdownRef.value.contains(e.target as Node)) {
+      showCustomerDropdown.value = false
+    }
+  })
 })
 
 defineExpose({ submit })
