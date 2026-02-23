@@ -27,7 +27,12 @@ router.get(["", "/"], async (req, res) => {
       byCategory[o.category_id].push(o);
     }
     const categories = cats.rows.map(c => ({ ...c, options: byCategory[c.id] || [] }));
-    res.json({ ok: true, categories });
+
+    // Fetch base price
+    const configRes = await pool.query("SELECT value FROM system_config WHERE key='cake_base_price' LIMIT 1");
+    const basePrice = configRes.rowCount > 0 ? Number(configRes.rows[0].value) : 30000;
+
+    res.json({ ok: true, categories, base_price: basePrice });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

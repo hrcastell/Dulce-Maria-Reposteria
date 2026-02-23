@@ -17,6 +17,7 @@ const adminOrdersRoutes = require("./src/routes/admin.orders");
 const adminReportsRoutes = require("./src/routes/admin.reports");
 const adminSuppliesRoutes = require("./src/routes/admin.supplies");
 const adminCakeRoutes = require("./src/routes/admin.cake");
+const adminConfigRoutes = require("./src/routes/admin.config");
 const publicCakeRoutes = require("./src/routes/public.cake");
 const { runCompleteMigrations } = require("./src/migrations/complete");
 
@@ -99,6 +100,7 @@ apiRouter.use("/admin/users", adminUsersRoutes);
 apiRouter.use("/admin/products", adminProductsRoutes);
 apiRouter.use("/admin/supplies", adminSuppliesRoutes);
 apiRouter.use("/admin/cake", adminCakeRoutes);
+apiRouter.use("/admin/config", requireAuth, adminApiLimiter, adminConfigRoutes);
 
 // Montar API en raíz y en /dulcemaria (para robustez con Passenger)
 app.use("/", apiRouter);

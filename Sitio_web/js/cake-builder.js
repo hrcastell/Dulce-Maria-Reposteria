@@ -1,6 +1,5 @@
-const BASE_PRICE = 30000;
-
 // ─── State ────────────────────────────────────────────────────────────────────
+let BASE_PRICE = 30000; // Valor por defecto, se actualiza desde API
 let cakeCategories = [];
 let cakeSelections = {};   // { categoryType: { id, label, extra_price_clp } }
 let currentStep = 0;
@@ -29,10 +28,19 @@ async function loadCakeBuilder() {
   try {
     const res = await fetch(`${API_BASE}/public/cake-builder`);
     const data = await res.json();
+    console.log('Cake Builder Config:', data); // Debug log
+
     if (!data.ok || !data.categories || data.categories.length === 0) {
       document.getElementById('cake-loading').innerHTML = '<p class="text-gray-400">No hay opciones disponibles aún.</p>';
       return;
     }
+    
+    // Set base price from API if available
+    if (data.base_price) {
+      console.log('Setting BASE_PRICE to:', data.base_price); // Debug log
+      BASE_PRICE = Number(data.base_price);
+    }
+
     cakeCategories = data.categories.filter(c => c.options && c.options.length > 0);
     // Pre-select defaults
     for (const cat of cakeCategories) {

@@ -8,8 +8,18 @@ function formatPrice(n) {
 
 function getImageUrl(url) {
   if (!url) return null;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  return API_BASE + url;
+  let result;
+  if (url.startsWith('https://hrcastell.com/uploads/')) {
+    result = url.replace('https://hrcastell.com/uploads/', 'https://hrcastell.com/dulcemaria/uploads/');
+  } else if (url.startsWith('http://') || url.startsWith('https://')) {
+    result = url;
+  } else {
+    const base = API_BASE.replace(/\/$/, '');
+    const path = url.startsWith('/') ? url : '/' + url;
+    result = base + path;
+  }
+  console.log('[catalog getImageUrl] input:', url, '→ output:', result);
+  return result;
 }
 
 // ─── Catalog loading ──────────────────────────────────────────────────────────

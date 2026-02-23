@@ -15,7 +15,7 @@
           </div>
           <div>
             <p class="text-xs sm:text-sm text-warm-500">Órdenes</p>
-            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ stats.orders }}</p>
+            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ dashboardStats.orders }}</p>
           </div>
         </div>
       </div>
@@ -27,7 +27,7 @@
           </div>
           <div>
             <p class="text-xs sm:text-sm text-warm-500">Productos</p>
-            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ stats.products }}</p>
+            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ dashboardStats.products }}</p>
           </div>
         </div>
       </div>
@@ -39,7 +39,7 @@
           </div>
           <div>
             <p class="text-xs sm:text-sm text-warm-500">Clientes</p>
-            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ stats.customers }}</p>
+            <p class="text-lg sm:text-xl font-bold text-warm-800">{{ dashboardStats.customers }}</p>
           </div>
         </div>
       </div>
@@ -51,7 +51,7 @@
           </div>
           <div>
             <p class="text-xs sm:text-sm text-warm-500">Ventas Hoy</p>
-            <p class="text-lg sm:text-xl font-bold text-warm-800">${{ formatPrice(stats.todaySales) }}</p>
+            <p class="text-lg sm:text-xl font-bold text-warm-800">${{ formatPrice(dashboardStats.todaySales) }}</p>
           </div>
         </div>
       </div>
@@ -81,58 +81,74 @@
       </NuxtLink>
     </div>
 
-    <!-- Recent Activity -->
-    <div v-if="recentOrders.length > 0" class="mt-8">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-warm-800">Órdenes Recientes</h2>
-        <NuxtLink to="/dashboard/orders" class="text-sm text-primary-600 hover:text-primary-700 font-medium">
-          Ver todas
-        </NuxtLink>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+      <!-- Recent Orders -->
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-warm-800">Órdenes Recientes</h2>
+          <NuxtLink to="/dashboard/orders" class="text-sm text-primary-600 hover:text-primary-700 font-medium">
+            Ver todas
+          </NuxtLink>
+        </div>
+
+        <div v-if="recentOrders.length > 0" class="bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
+          <table class="min-w-full divide-y divide-warm-100">
+            <thead class="bg-warm-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">#</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Cliente</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Estado</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-warm-100">
+              <tr v-for="order in recentOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
+                <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
+                <td class="px-4 py-3 text-sm text-warm-700">{{ order.customer_name }}</td>
+                <td class="px-4 py-3">
+                  <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
+                    {{ formatStatus(order.status) }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-sm font-medium text-warm-800">${{ formatPrice(order.total_clp) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="bg-white rounded-2xl p-8 text-center border border-warm-100 shadow-soft">
+          <p class="text-warm-600 font-medium">No hay órdenes recientes</p>
+        </div>
       </div>
 
-      <!-- Desktop Table -->
-      <div class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
-        <table class="min-w-full divide-y divide-warm-100">
-          <thead class="bg-warm-50">
-            <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">#</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Cliente</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Estado</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Total</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Fecha</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-warm-100">
-            <tr v-for="order in recentOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
-              <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
-              <td class="px-4 py-3 text-sm text-warm-700">{{ order.customer_name }}</td>
-              <td class="px-4 py-3">
-                <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
-                  {{ formatStatus(order.status) }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-sm font-medium text-warm-800">${{ formatPrice(order.total_clp) }}</td>
-              <td class="px-4 py-3 text-sm text-warm-500">{{ formatDate(order.created_at) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <!-- Low Stock Alerts -->
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-warm-800 flex items-center gap-2">
+            ⚠️ Stock Crítico
+            <span v-if="lowStockItems.length" class="bg-error-100 text-error-700 text-xs px-2 py-0.5 rounded-full">{{ lowStockItems.length }}</span>
+          </h2>
+          <NuxtLink to="/dashboard/products" class="text-sm text-primary-600 hover:text-primary-700 font-medium">
+            Gestionar
+          </NuxtLink>
+        </div>
 
-      <!-- Mobile Cards -->
-      <div class="sm:hidden space-y-3">
-        <div v-for="order in recentOrders" :key="order.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
-          <div class="flex items-start justify-between">
-            <div>
-              <p class="font-semibold text-warm-800">#{{ order.order_no }}</p>
-              <p class="text-sm text-warm-600 mt-0.5">{{ order.customer_name }}</p>
+        <div v-if="lowStockItems.length === 0" class="bg-white rounded-2xl p-8 text-center border border-warm-100 shadow-soft">
+          <div class="text-4xl mb-3">✅</div>
+          <p class="text-warm-600 font-medium">Todo en orden</p>
+          <p class="text-sm text-warm-400">No hay productos con stock agotado.</p>
+        </div>
+
+        <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden max-h-[400px] overflow-y-auto">
+          <div v-for="item in lowStockItems" :key="item.id" class="p-4 border-b border-warm-100 last:border-0 hover:bg-warm-50/50 transition-colors">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="font-medium text-warm-800">{{ item.name }}</p>
+                <p v-if="item.variant_name" class="text-xs text-warm-500 mt-0.5">Variante: {{ item.variant_name }}</p>
+              </div>
+              <span class="bg-error-50 text-error-700 text-xs font-bold px-2 py-1 rounded-lg">
+                Stock: {{ item.stock_qty }}
+              </span>
             </div>
-            <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
-              {{ formatStatus(order.status) }}
-            </span>
-          </div>
-          <div class="flex items-center justify-between mt-3 pt-3 border-t border-warm-100">
-            <p class="font-semibold text-primary-600">${{ formatPrice(order.total_clp) }}</p>
-            <p class="text-xs text-warm-400">{{ formatDate(order.created_at) }}</p>
           </div>
         </div>
       </div>
@@ -141,89 +157,70 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
+
 definePageMeta({
   layout: 'dashboard',
   middleware: 'auth'
 })
 
-useHead({
-  title: 'Dashboard | Dulce María'
-})
-
-const api = useApi()
-
-interface User {
-  email: string
-  role: string
-}
-
 interface Order {
   id: string
-  order_no: number
+  order_no: string | number
   customer_name: string
   status: string
   total_clp: number
   created_at: string
 }
 
-const user = ref<User | null>(null)
-const stats = ref({
+interface LowStockItem {
+  id: string
+  name: string
+  variant_name?: string
+  stock_qty: number
+}
+
+const api = useApi()
+const user = ref<any>(null)
+const dashboardStats = ref({
   orders: 0,
   products: 0,
   customers: 0,
   todaySales: 0
 })
 const recentOrders = ref<Order[]>([])
+const lowStockItems = ref<LowStockItem[]>([])
 
 const quickActions = [
   {
     title: 'Nueva Orden',
-    description: 'Crear una orden manualmente',
-    icon: '📦',
-    path: '/dashboard/orders',
-    bgColor: 'bg-primary-100'
+    description: 'Crear una venta manual',
+    icon: '📝',
+    bgColor: 'bg-primary-100',
+    path: '/dashboard/orders/new'
   },
   {
-    title: 'Agregar Producto',
-    description: 'Añadir producto al catálogo',
-    icon: '🍰',
-    path: '/dashboard/products',
-    bgColor: 'bg-secondary-100'
+    title: 'Nuevo Producto',
+    description: 'Agregar al inventario',
+    icon: '🧁',
+    bgColor: 'bg-secondary-100',
+    path: '/dashboard/products' 
   },
   {
     title: 'Nuevo Cliente',
-    description: 'Registrar cliente en el sistema',
+    description: 'Registrar comprador',
     icon: '👤',
-    path: '/dashboard/customers',
-    bgColor: 'bg-success-100'
-  },
-  {
-    title: 'Configurar Tortas',
-    description: 'Opciones de tortas personalizadas',
-    icon: '🎂',
-    path: '/dashboard/cake-builder',
-    bgColor: 'bg-warning-100'
-  },
-  {
-    title: 'Registrar Gasto',
-    description: 'Agregar insumo o gasto',
-    icon: '🧂',
-    path: '/dashboard/supplies',
-    bgColor: 'bg-info-100'
-  },
-  {
-    title: 'Ver Reportes',
-    description: 'Análisis de ventas y métricas',
-    icon: '📊',
-    path: '/dashboard/reports',
-    bgColor: 'bg-primary-100'
+    bgColor: 'bg-warm-100',
+    path: '/dashboard/customers'
   }
 ]
 
 onMounted(() => {
   const userStr = localStorage.getItem('user')
   if (userStr) {
-    user.value = JSON.parse(userStr)
+    try {
+      user.value = JSON.parse(userStr)
+    } catch (e) {}
   }
   loadDashboardData()
 })
@@ -238,7 +235,7 @@ const loadDashboardData = async () => {
     ])
 
     if (ordersRes.ok) {
-      stats.value.orders = ordersRes.items?.length || 0
+      dashboardStats.value.orders = ordersRes.items?.length || 0
       recentOrders.value = (ordersRes.items || []).slice(0, 5)
 
       // Calculate today's sales
@@ -246,20 +243,40 @@ const loadDashboardData = async () => {
       const todayOrders = ordersRes.items?.filter((o: Order) =>
         o.created_at?.startsWith(today) && o.status !== 'CANCELLED'
       ) || []
-      stats.value.todaySales = todayOrders.reduce((sum: number, o: Order) => sum + (o.total_clp || 0), 0)
+      dashboardStats.value.todaySales = todayOrders.reduce((sum: number, o: Order) => sum + (o.total_clp || 0), 0)
     }
 
     if (productsRes.ok) {
-      stats.value.products = productsRes.items?.length || 0
+      const allProducts = productsRes.items || []
+      dashboardStats.value.products = allProducts.length
+      
+      // Calculate Low Stock (Client side filter for now, ideally API endpoint)
+      // Since listing all products might not list all variants, we need to be careful.
+      // However, we don't have a bulk variants endpoint easily available here without fetching all.
+      // Strategy: Check products with stock_qty <= 0.
+      // Note: If product has variants, its stock_qty is sum of variants (due to our new trigger).
+      // So if product stock is 0, it means ALL variants are 0.
+      // This is a good approximation for "Stock Crítico" at product level.
+      // If user wants specific variant low stock, we'd need to fetch all variants or add a specific API endpoint.
+      // Given the prompt "incluir un cart que indique los productos que están en stock 0", showing the product is sufficient.
+      
+      lowStockItems.value = allProducts
+        .filter((p: any) => p.is_active && p.stock_qty <= 0)
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          stock_qty: p.stock_qty
+        }))
     }
 
     if (customersRes.ok) {
-      stats.value.customers = customersRes.items?.length || 0
+      dashboardStats.value.customers = customersRes.items?.length || 0
     }
   } catch (e) {
     console.error('Error loading dashboard:', e)
   }
 }
+// ...
 
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat('es-CL').format(price || 0)

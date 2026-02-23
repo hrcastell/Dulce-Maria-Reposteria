@@ -258,8 +258,18 @@ const formatPrice = (price: number) => {
 
 const getImageUrl = (url: string) => {
   if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  return `${config.public.apiBase}${url}`
+  let result = ''
+  if (url.startsWith('https://hrcastell.com/uploads/')) {
+    result = url.replace('https://hrcastell.com/uploads/', 'https://hrcastell.com/dulcemaria/uploads/')
+  } else if (url.startsWith('http://') || url.startsWith('https://')) {
+    result = url
+  } else {
+    const base = config.public.apiBase.replace(/\/$/, '')
+    const path = url.startsWith('/') ? url : '/' + url
+    result = base + path
+  }
+  console.log('[getImageUrl] input:', url, '→ output:', result)
+  return result
 }
 
 const loadProducts = async () => {
