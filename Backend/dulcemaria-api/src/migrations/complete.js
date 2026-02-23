@@ -380,14 +380,22 @@ async function runCompleteMigrations() {
     // ============================================
     `CREATE OR REPLACE FUNCTION update_product_stock_from_variants()
     RETURNS TRIGGER AS $$
+    DECLARE
+      target_product_id UUID;
     BEGIN
+      IF TG_OP = 'DELETE' THEN
+        target_product_id := OLD.product_id;
+      ELSE
+        target_product_id := NEW.product_id;
+      END IF;
+
       UPDATE products
       SET stock_qty = (
         SELECT COALESCE(SUM(stock_qty), 0)
         FROM product_variants
-        WHERE product_id = COALESCE(NEW.product_id, OLD.product_id)
+        WHERE product_id = target_product_id
       )
-      WHERE id = COALESCE(NEW.product_id, OLD.product_id);
+      WHERE id = target_product_id;
       RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;`,
