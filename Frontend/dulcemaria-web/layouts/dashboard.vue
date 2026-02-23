@@ -141,21 +141,29 @@ onMounted(() => {
   }
 })
 
-const navItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/dashboard/orders', label: 'Órdenes', icon: '📦' },
-  { path: '/dashboard/products', label: 'Productos', icon: '🍰' },
-  { path: '/dashboard/customers', label: 'Clientes', icon: '👥' },
-  { path: '/dashboard/supplies', label: 'Insumos', icon: '🧂' },
-  { path: '/dashboard/cake-builder', label: 'Tortas', icon: '🎂' },
-  { path: '/dashboard/hero', label: 'Banners', icon: '🖼️' },
-  { path: '/dashboard/reports', label: 'Reportes', icon: '📈' },
-]
+const navItems = computed(() => {
+  const items = [
+    { path: '/dashboard', label: 'Dashboard', icon: '📊' },
+    { path: '/dashboard/orders', label: 'Órdenes', icon: '📦' },
+    { path: '/dashboard/products', label: 'Productos', icon: '🍰' },
+    { path: '/dashboard/customers', label: 'Clientes', icon: '👥' },
+    { path: '/dashboard/supplies', label: 'Insumos', icon: '🧂' },
+    { path: '/dashboard/cake-builder', label: 'Tortas', icon: '🎂' },
+    { path: '/dashboard/hero', label: 'Banners', icon: '🖼️' },
+    { path: '/dashboard/reports', label: 'Reportes', icon: '📈' },
+  ]
 
-// Add users link only for admin
-if (user.value?.email === 'hernan.castellanos@hrcastell.com' || user.value?.role === 'GOD') {
-  navItems.push({ path: '/dashboard/users', label: 'Usuarios', icon: '🔐' })
-}
+  // Add users link only for admin
+  if (
+    user.value?.email === 'hernan.castellanos@hrcastell.com' || 
+    user.value?.role === 'GOD' || 
+    user.value?.role === 'SUPERADMIN'
+  ) {
+    items.push({ path: '/dashboard/users', label: 'Usuarios', icon: '🔐' })
+  }
+
+  return items
+})
 
 const isActive = (path: string) => {
   if (path === '/dashboard') {

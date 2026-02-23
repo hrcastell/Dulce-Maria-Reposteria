@@ -1,0 +1,37 @@
+<IfModule mod_headers.c>
+    # Handle CORS for API requests - Allow multiple origins dynamically
+    SetEnvIf Origin "^http://localhost:3000$" CORS_ORIGIN=$0
+    SetEnvIf Origin "^https://hrcastell\.com$" CORS_ORIGIN=$0
+    SetEnvIf Origin "^https://www\.hrcastell\.com$" CORS_ORIGIN=$0
+    
+    Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+    Header always set Access-Control-Allow-Credentials "true"
+    Header always set Access-Control-Max-Age "3600"
+</IfModule>
+
+# Enable rewrite engine
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Handle OPTIONS preflight requests for API routes only
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteCond %{REQUEST_URI} ^/dulcemaria/(auth|admin|public)/
+    RewriteRule ^(.*)$ $1 [R=200,L]
+    
+    # Proxy API routes to Node.js backend (adjust port if needed - check cPanel Node.js App)
+    # This will proxy: /dulcemaria/auth/*, /dulcemaria/admin/*, /dulcemaria/public/*
+    RewriteCond %{REQUEST_URI} ^/dulcemaria/(auth|admin|public)/
+    RewriteRule ^dulcemaria/(.*)$ http://127.0.0.1:3000/dulcemaria/$1 [P,L]
+    
+    # Allow normal access to portal/ and site/ folders (static files)
+    # Apache will serve these directories normally
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>

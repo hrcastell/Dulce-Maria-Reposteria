@@ -61,6 +61,7 @@
 <script setup lang="ts">
 const props = defineProps<{
   customer?: any
+  existingCustomers?: Array<{ id: string; full_name: string }>
 }>()
 
 const emit = defineEmits<{
@@ -78,10 +79,35 @@ const form = ref({
 
 const error = ref('')
 
+/**
+ * Normalize string for comparison (remove accents, lowercase, trim extra spaces)
+ */
+const normalizeString = (str: string) => {
+  if (!str) return ''
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim()
+}
+
 const validate = () => {
   if (!form.value.full_name.trim()) {
     error.value = 'El nombre completo es requerido'
     return false
+  }
+  
+  // Check for duplicate name (normalized)
+  if (props.existingCustomers && props.existingCustomers.length > 0) {
+    const normalizedName = normalizeString(form.value.full_name)
+    const duplicate = props.existingCustomers.find(c => 
+      c.id !== props.customer?.id && normalizeString(c.full_name) === normalizedName
+    )
+    if (duplicate) {
+      error.value = `Ya existe un cliente con el nombre "${duplicate.full_name}"`
+      return false
+    }
   }
   
   // Validar email si está presente

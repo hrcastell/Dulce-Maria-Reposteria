@@ -9,6 +9,19 @@ const { validateUuidParam } = require("../middleware/validate-uuid");
 const router = express.Router();
 
 /**
+ * Normalize string for comparison (remove accents, lowercase, trim extra spaces)
+ */
+function normalizeString(str) {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/\s+/g, " ") // Normalize spaces
+    .trim();
+}
+
+/**
  * GET /admin/customers?q=...
  * Lista/busca clientes (máx 50)
  */
@@ -69,6 +82,17 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       if (ex.rowCount > 0) return res.status(409).json({ ok: false, error: "Cliente con ese email ya existe" });
     }
 
+    // Check for duplicate name (normalized)
+    const normalizedName = normalizeString(d.fullName);
+    const allCustomers = await pool.query("SELECT full_name FROM customers");
+    const duplicateName = allCustomers.rows.find(c => normalizeString(c.full_name) === normalizedName);
+    if (duplicateName) {
+      return res.status(409).json({ 
+        ok: false, 
+        error: `Ya existe un cliente con el nombre "${duplicateName.full_name}"` 
+      });
+    }
+
     const id = crypto.randomUUID();
     await pool.query(
       `INSERT INTO customers (id, email, full_name, phone, address, notes, created_at, updated_at)
@@ -83,7 +107,14 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       ]
     );
 
-    return res.json({ ok: true, customer: { id, email: d.email ?? null, fullName: d.fullName } });
+    // Fetch the created customer to return consistent format
+    const r = await pool.query(
+      `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
+       FROM customers WHERE id=$1 LIMIT 1`,
+      [id]
+    );
+
+    return res.json({ ok: true, customer: r.rows[0] });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

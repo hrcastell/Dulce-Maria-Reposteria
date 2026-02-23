@@ -197,7 +197,7 @@ const quickActions = [
     description: 'Crear una venta manual',
     icon: '📝',
     bgColor: 'bg-primary-100',
-    path: '/dashboard/orders/new'
+    path: '/dashboard/orders'
   },
   {
     title: 'Nuevo Producto',
@@ -235,15 +235,33 @@ const loadDashboardData = async () => {
     ])
 
     if (ordersRes.ok) {
-      dashboardStats.value.orders = ordersRes.items?.length || 0
+      // Get today's date components in local timezone
+      const now = new Date()
+      const todayYear = now.getFullYear()
+      const todayMonth = now.getMonth()
+      const todayDay = now.getDate()
+
+      // Filter today's orders using Date object (handles any timestamp format)
+      const todayOrders = ordersRes.items?.filter((o: Order) => {
+        if (!o.created_at) return false
+        const orderDate = new Date(o.created_at)
+        return (
+          orderDate.getFullYear() === todayYear &&
+          orderDate.getMonth() === todayMonth &&
+          orderDate.getDate() === todayDay
+        )
+      }) || []
+
+      // Órdenes card: count only today's orders
+      dashboardStats.value.orders = todayOrders.length
+
+      // Recent orders: show last 5 from all orders
       recentOrders.value = (ordersRes.items || []).slice(0, 5)
 
-      // Calculate today's sales
-      const today = new Date().toISOString().split('T')[0]
-      const todayOrders = ordersRes.items?.filter((o: Order) =>
-        o.created_at?.startsWith(today) && o.status !== 'CANCELLED'
-      ) || []
-      dashboardStats.value.todaySales = todayOrders.reduce((sum: number, o: Order) => sum + (o.total_clp || 0), 0)
+      // Ventas Hoy: sum only today's non-cancelled orders
+      dashboardStats.value.todaySales = todayOrders
+        .filter((o: Order) => o.status !== 'CANCELLED')
+        .reduce((sum: number, o: Order) => sum + (o.total_clp || 0), 0)
     }
 
     if (productsRes.ok) {

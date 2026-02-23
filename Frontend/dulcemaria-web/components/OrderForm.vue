@@ -287,6 +287,7 @@
     >
       <CustomerForm
         ref="customerFormRef"
+        :existing-customers="customers"
         @submit="handleCreateCustomer"
       />
       <div class="mt-4 flex justify-end">
@@ -585,7 +586,7 @@ const filteredCustomers = computed(() => {
   if (!customerSearch.value) return customers.value.slice(0, 10)
   const lower = customerSearch.value.toLowerCase()
   return customers.value
-    .filter(c => c.full_name.toLowerCase().includes(lower) || c.phone?.includes(lower))
+    .filter(c => c.full_name?.toLowerCase().includes(lower) || c.phone?.includes(lower))
     .slice(0, 10)
 })
 

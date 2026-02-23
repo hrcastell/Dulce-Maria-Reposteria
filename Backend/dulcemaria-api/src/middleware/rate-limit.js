@@ -8,11 +8,11 @@ const rateLimit = require("express-rate-limit");
 
 // Rate limiter para login (más estricto)
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5, // 5 intentos por ventana
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 10, // 10 intentos por ventana
   message: {
     ok: false,
-    error: "Demasiados intentos de login. Intenta de nuevo en 15 minutos.",
+    error: "Demasiados intentos de login. Intenta de nuevo en 5 minutos.",
   },
   standardHeaders: true,
   legacyHeaders: false,

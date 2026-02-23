@@ -84,7 +84,7 @@
               <td class="px-4 py-3">
                 <div class="flex items-center gap-3">
                   <div class="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-lg">
-                    {{ customer.full_name.charAt(0).toUpperCase() }}
+                    {{ customer.full_name?.charAt(0).toUpperCase() || '?' }}
                   </div>
                   <div class="text-sm font-medium text-warm-800">{{ customer.full_name }}</div>
                 </div>
@@ -122,7 +122,7 @@
         <div v-for="customer in filteredCustomers" :key="customer.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
           <div class="flex items-start gap-3">
             <div class="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-xl flex-shrink-0">
-              {{ customer.full_name.charAt(0).toUpperCase() }}
+              {{ customer.full_name?.charAt(0).toUpperCase() || '?' }}
             </div>
             <div class="flex-1 min-w-0">
               <h3 class="font-semibold text-warm-800">{{ customer.full_name }}</h3>
@@ -167,7 +167,11 @@
       :loading="saving"
       @submit="handleCreateCustomer"
     >
-      <CustomerForm ref="customerFormRef" @submit="handleSubmitCustomer" />
+      <CustomerForm 
+        ref="customerFormRef" 
+        :existing-customers="customers"
+        @submit="handleSubmitCustomer" 
+      />
     </Modal>
 
     <!-- Edit Customer Modal -->
@@ -177,7 +181,12 @@
       :loading="saving"
       @submit="handleEditCustomer"
     >
-      <CustomerForm ref="editFormRef" :customer="selectedCustomer" @submit="handleUpdateCustomer" />
+      <CustomerForm 
+        ref="editFormRef" 
+        :customer="selectedCustomer" 
+        :existing-customers="customers"
+        @submit="handleUpdateCustomer" 
+      />
     </Modal>
 
     <!-- Delete Confirmation -->
