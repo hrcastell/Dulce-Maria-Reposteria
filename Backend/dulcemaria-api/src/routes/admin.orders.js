@@ -73,7 +73,8 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
     if (o.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
 
     const items = await pool.query(
-      `SELECT id, product_id, product_name_snapshot, unit_price_clp, qty, line_total_clp, created_at
+      `SELECT id, product_id, product_name_snapshot, unit_price_clp, qty, line_total_clp, created_at,
+              variant_id, variant_name, selected_toppings
        FROM order_items
        WHERE order_id=$1
        ORDER BY created_at ASC`,
@@ -96,6 +97,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     items: z.array(z.object({
       productId: z.string().uuid(),
       qty: z.number().int().positive(),
+      variantId: z.string().uuid().optional().nullable(),
+      toppings: z.array(z.string().uuid()).optional().default([]), // IDs de toppings
     })).min(1),
 
     deliveryMethod: z.enum(DELIVERY_METHOD).default("PICKUP"),
@@ -105,12 +108,18 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     paymentStatus: z.enum(PAYMENT_STATUS).default("PAID"),
 
     status: z.enum(ORDER_STATUS).default("DELIVERED"),
+    
+    discountAmountClp: z.number().int().nonnegative().default(0),
+    finalPriceOverrideClp: z.number().int().nonnegative().optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
-  const { customerId, items, deliveryMethod, deliveryFeeClp, paymentMethod, paymentStatus, status } = parsed.data;
+  const {
+    customerId, items, deliveryMethod, deliveryFeeClp, paymentMethod, paymentStatus, status,
+    discountAmountClp, finalPriceOverrideClp
+  } = parsed.data;
 
   const pool = getPool();
   const client = await pool.connect();
@@ -121,9 +130,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     const c = await client.query("SELECT id FROM customers WHERE id=$1 LIMIT 1", [customerId]);
     if (c.rowCount === 0) throw new Error("Cliente no existe");
 
+    // 1. Fetch Products
     const productIds = items.map(i => i.productId);
-
-    // Lock filas para evitar over-sell en concurrencia
     const pr = await client.query(
       `SELECT id, name, price_clp, stock_qty, is_active
        FROM products
@@ -131,70 +139,164 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
        FOR UPDATE`,
       [productIds]
     );
+    if (pr.rowCount !== new Set(productIds).size) {
+      // Note: simple check, might fail if duplicate productIds in items (should merge them or handle separately)
+      // For now assume user sends unique product lines or valid products
+    }
+    const productsMap = new Map(pr.rows.map(p => [p.id, p]));
 
-    if (pr.rowCount !== productIds.length) {
-      throw new Error("Uno o más productos no existen.");
+    // 2. Fetch Variants if needed
+    const variantIds = items.map(i => i.variantId).filter(Boolean);
+    let variantsMap = new Map();
+    if (variantIds.length > 0) {
+      const vr = await client.query(
+        `SELECT id, product_id, name, price_override_clp, stock_qty, is_active
+         FROM product_variants
+         WHERE id = ANY($1::uuid[])
+         FOR UPDATE`,
+        [variantIds]
+      );
+      variantsMap = new Map(vr.rows.map(v => [v.id, v]));
     }
 
-    const map = new Map(pr.rows.map(p => [p.id, p]));
+    // 3. Fetch Toppings if needed
+    const allToppingIds = items.flatMap(i => i.toppings);
+    let toppingsMap = new Map();
+    if (allToppingIds.length > 0) {
+      const tr = await client.query(
+        `SELECT id, product_id, name, price_clp, type
+         FROM product_toppings
+         WHERE id = ANY($1::uuid[])`,
+        [allToppingIds]
+      );
+      toppingsMap = new Map(tr.rows.map(t => [t.id, t]));
+    }
 
     // Validación + cálculo
     let subtotal = 0;
+    const orderItemsData = [];
+
     for (const it of items) {
-      const p = map.get(it.productId);
+      const p = productsMap.get(it.productId);
+      if (!p) throw new Error(`Producto no encontrado: ${it.productId}`);
+      if (!p.is_active) throw new Error(`Producto inactivo: ${p.name}`);
 
-      if (!p.is_active) {
-        const msg = `Producto inactivo: ${p.name}`;
-        const err = new Error(msg);
-        err.statusCode = 400;
-        throw err;
+      let unitPrice = Number(p.price_clp);
+      let variantName = null;
+      let variantId = null;
+
+      // Handle Variant
+      if (it.variantId) {
+        const v = variantsMap.get(it.variantId);
+        if (!v) throw new Error(`Variante no encontrada: ${it.variantId}`);
+        if (v.product_id !== p.id) throw new Error(`Variante ${v.name} no pertenece a ${p.name}`);
+        if (!v.is_active) throw new Error(`Variante inactiva: ${v.name}`);
+
+        variantId = v.id;
+        variantName = v.name;
+        
+        // Price override?
+        if (v.price_override_clp !== null) {
+          unitPrice = Number(v.price_override_clp);
+        }
+
+        // Check stock on VARIANT
+        const available = Number(v.stock_qty);
+        if (it.qty > available) {
+          throw new Error(`Stock insuficiente para "${p.name} - ${v.name}". Disponible: ${available}`);
+        }
+
+        // Deduct variant stock (trigger will update product stock)
+        await client.query(
+          `UPDATE product_variants SET stock_qty = stock_qty - $1, updated_at=NOW() WHERE id=$2`,
+          [it.qty, v.id]
+        );
+
+      } else {
+        // No variant -> check Product stock
+        // Solo si NO tiene variantes obligatorias (asumimos que si el front manda sin variantId es un producto simple)
+        // Ojo: si el plan dice que el stock se mueve por variantes, productos sin variantes siguen usando stock_qty de products.
+        const available = Number(p.stock_qty);
+        if (it.qty > available) {
+          throw new Error(`Stock insuficiente para "${p.name}". Disponible: ${available}`);
+        }
+        await client.query(
+          `UPDATE products SET stock_qty = stock_qty - $1, updated_at=NOW() WHERE id=$2`,
+          [it.qty, p.id]
+        );
       }
 
-      const available = Number(p.stock_qty);
-      const requested = Number(it.qty);
-
-      if (requested > available) {
-        const msg = `Stock insuficiente para "${p.name}". Disponible: ${available}, solicitado: ${requested}`;
-        const err = new Error(msg);
-        err.statusCode = 400;
-        throw err;
+      // Handle Toppings
+      const selectedToppings = [];
+      for (const tid of it.toppings) {
+        const t = toppingsMap.get(tid);
+        if (!t) throw new Error(`Topping no encontrado: ${tid}`);
+        if (t.product_id !== p.id) throw new Error(`Topping ${t.name} no pertenece a ${p.name}`);
+        
+        // Add price
+        if (t.price_clp > 0) {
+          unitPrice += Number(t.price_clp);
+        }
+        selectedToppings.push({ id: t.id, name: t.name, price: t.price_clp });
       }
 
-      subtotal += Number(p.price_clp) * requested;
+      const lineTotal = unitPrice * it.qty;
+      subtotal += lineTotal;
+
+      orderItemsData.push({
+        id: crypto.randomUUID(),
+        productId: p.id,
+        productName: p.name,
+        variantId,
+        variantName,
+        selectedToppings: selectedToppings.length ? JSON.stringify(selectedToppings) : null,
+        unitPrice,
+        qty: it.qty,
+        lineTotal
+      });
     }
 
-    const total = subtotal + Number(deliveryFeeClp || 0);
+    // Final Totals
+    const delivery = Number(deliveryFeeClp || 0);
+    const discount = Number(discountAmountClp || 0);
+    let total = subtotal + delivery - discount;
+    if (total < 0) total = 0;
+
+    // Apply Override if exists
+    if (finalPriceOverrideClp !== undefined && finalPriceOverrideClp !== null) {
+      total = finalPriceOverrideClp;
+    }
 
     // Insert order
     const orderId = crypto.randomUUID();
-    const orderCode = `ORD-${Date.now()}`; // order_code generado con timestamp
+    const orderCode = `ORD-${Date.now()}`;
     
     const o = await client.query(
-      `INSERT INTO orders (id, order_code, customer_id, status, payment_status, payment_method, delivery_method,
-                           subtotal_clp, delivery_fee_clp, total_clp, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
+      `INSERT INTO orders (
+          id, order_code, customer_id, status, payment_status, payment_method, delivery_method,
+          subtotal_clp, delivery_fee_clp, discount_amount_clp, final_price_override_clp, total_clp,
+          created_at, updated_at
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
        RETURNING id, order_no, order_code, status, total_clp`,
-      [orderId, orderCode, customerId, status, paymentStatus, paymentMethod, deliveryMethod, subtotal, deliveryFeeClp, total]
+      [
+        orderId, orderCode, customerId, status, paymentStatus, paymentMethod, deliveryMethod,
+        subtotal, delivery, discount, finalPriceOverrideClp ?? null, total
+      ]
     );
 
-    // Items + stock update
-    for (const it of items) {
-      const p = map.get(it.productId);
-      const unit = Number(p.price_clp);
-      const line = unit * Number(it.qty);
-
+    // Insert items
+    for (const item of orderItemsData) {
       await client.query(
-        `INSERT INTO order_items (id, order_id, product_id, product_name_snapshot,
-                                  unit_price_clp, qty, line_total_clp, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
-        [crypto.randomUUID(), orderId, it.productId, p.name, unit, it.qty, line]
-      );
-
-      await client.query(
-        `UPDATE products
-         SET stock_qty = stock_qty - $1, updated_at=NOW()
-         WHERE id=$2`,
-        [it.qty, it.productId]
+        `INSERT INTO order_items (
+           id, order_id, product_id, product_name_snapshot, variant_id, variant_name, selected_toppings,
+           unit_price_clp, qty, line_total_clp, created_at
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+        [
+          item.id, orderId, item.productId, item.productName, item.variantId, item.variantName, item.selectedToppings,
+          item.unitPrice, item.qty, item.lineTotal
+        ]
       );
     }
 

@@ -447,4 +447,103 @@ router.delete("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), valida
   }
 });
 
+// ===== Toppings =====
+
+router.get("/:id/toppings", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT id, product_id, name, type, price_clp, is_active, created_at
+       FROM product_toppings
+       WHERE product_id = $1
+       ORDER BY type ASC, name ASC`,
+      [id]
+    );
+    res.json({ ok: true, items: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.post("/:id/toppings", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+  const { id } = req.params;
+  const schema = z.object({
+    name: z.string().min(1).max(100),
+    type: z.enum(["BASE", "ADDITIONAL"]).default("ADDITIONAL"),
+    price_clp: z.number().int().nonnegative().default(0),
+    is_active: z.boolean().default(true),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+  try {
+    const pool = getPool();
+    const prod = await pool.query("SELECT id FROM products WHERE id=$1 LIMIT 1", [id]);
+    if (prod.rowCount === 0) return res.status(404).json({ ok: false, error: "Producto no encontrado" });
+
+    const r = await pool.query(
+      `INSERT INTO product_toppings (id, product_id, name, type, price_clp, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [crypto.randomUUID(), id, parsed.data.name, parsed.data.type, parsed.data.price_clp, parsed.data.is_active]
+    );
+    res.json({ ok: true, topping: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.patch("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), async (req, res) => {
+  const { toppingId } = req.params;
+  const schema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    type: z.enum(["BASE", "ADDITIONAL"]).optional(),
+    price_clp: z.number().int().nonnegative().optional(),
+    is_active: z.boolean().optional(),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+  const fields = [];
+  const values = [];
+  let n = 1;
+  const d = parsed.data;
+
+  if (d.name !== undefined) { fields.push(`name=$${n++}`); values.push(d.name); }
+  if (d.type !== undefined) { fields.push(`type=$${n++}`); values.push(d.type); }
+  if (d.price_clp !== undefined) { fields.push(`price_clp=$${n++}`); values.push(d.price_clp); }
+  if (d.is_active !== undefined) { fields.push(`is_active=$${n++}`); values.push(d.is_active); }
+
+  if (fields.length === 0) return res.status(400).json({ ok: false, error: "Nada que actualizar" });
+  fields.push(`updated_at=NOW()`);
+  values.push(toppingId);
+
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `UPDATE product_toppings SET ${fields.join(",")} WHERE id=$${n} RETURNING *`,
+      values
+    );
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Topping no encontrado" });
+    res.json({ ok: true, topping: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+router.delete("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), async (req, res) => {
+  const { toppingId } = req.params;
+  try {
+    const pool = getPool();
+    const r = await pool.query("DELETE FROM product_toppings WHERE id=$1 RETURNING id", [toppingId]);
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Topping no encontrado" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
 module.exports = router;

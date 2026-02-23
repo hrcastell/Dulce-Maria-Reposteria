@@ -4,13 +4,11 @@
       <div
         v-if="modelValue"
         class="fixed inset-0 z-50 overflow-y-auto"
-        @click.self="close"
       >
         <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
           <!-- Overlay -->
           <div 
             class="fixed inset-0 transition-opacity bg-warm-900/50 backdrop-blur-sm" 
-            @click="close"
           ></div>
 
           <!-- Modal Content -->

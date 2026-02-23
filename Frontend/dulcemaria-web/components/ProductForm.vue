@@ -48,9 +48,14 @@
           type="number"
           required
           min="0"
-          class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+          :disabled="hasVariants"
+          :class="[
+            'block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all',
+            hasVariants ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+          ]"
           placeholder="20"
         >
+        <p v-if="hasVariants" class="text-xs text-warm-500 mt-1">Gestionado por variantes</p>
       </div>
     </div>
 
@@ -90,6 +95,29 @@
         <ProductVariants
           ref="variantsRef"
           :product-id="product?.id"
+          @change="updateStockFromVariants"
+        />
+      </div>
+    </div>
+
+    <!-- Toppings -->
+    <div class="pt-4 border-t border-warm-100">
+      <label class="flex items-center gap-3 cursor-pointer mb-4 select-none">
+        <div class="relative inline-flex items-center cursor-pointer">
+          <input 
+            v-model="hasToppings" 
+            type="checkbox" 
+            class="sr-only peer"
+          >
+          <div class="w-11 h-6 bg-warm-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+        </div>
+        <span class="text-sm font-medium text-warm-700">Habilitar toppings / adicionales</span>
+      </label>
+      
+      <div v-if="hasToppings" class="animate-fadeIn">
+        <ProductToppings
+          ref="toppingsRef"
+          :product-id="product?.id"
         />
       </div>
     </div>
@@ -118,15 +146,24 @@ const api = useApi()
 const error = ref('')
 const imageUploadRef = ref<any>(null)
 const variantsRef = ref<any>(null)
+const toppingsRef = ref<any>(null)
 const productImages = ref<any[]>([])
 const hasVariants = ref(false)
+const hasToppings = ref(false)
 
 onMounted(async () => {
   if (props.product?.id) {
     try {
-      const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/products/${props.product.id}/variants`)
-      if (res.ok && res.items && res.items.length > 0) {
+      // Check variants
+      const resVar = await api.get<{ ok: boolean; items: any[] }>(`/admin/products/${props.product.id}/variants`)
+      if (resVar.ok && resVar.items && resVar.items.length > 0) {
         hasVariants.value = true
+      }
+      
+      // Check toppings
+      const resTop = await api.get<{ ok: boolean; items: any[] }>(`/admin/products/${props.product.id}/toppings`)
+      if (resTop.ok && resTop.items && resTop.items.length > 0) {
+        hasToppings.value = true
       }
     } catch {}
   }
@@ -134,6 +171,12 @@ onMounted(async () => {
 
 const handleImagesUpdate = (images: any[]) => {
   productImages.value = images
+}
+
+const updateStockFromVariants = (variants: any[]) => {
+  // Sum stock from variants to display in the disabled input
+  const total = variants.reduce((sum, v) => sum + (Number(v.stock_qty) || 0), 0)
+  form.value.stock_qty = total
 }
 
 const validate = () => {

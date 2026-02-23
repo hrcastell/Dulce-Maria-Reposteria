@@ -415,9 +415,13 @@ const deleteOption = async (opt: any, cat: any) => {
   }
 }
 
-const saveBasePrice = () => {
-  localStorage.setItem('cake_base_price', String(basePriceInput.value))
-  alert('Precio base guardado correctamente.')
+const saveBasePrice = async () => {
+  try {
+    await api.put('/admin/config/cake_base_price', { value: String(basePriceInput.value) })
+    alert('Precio base guardado correctamente.')
+  } catch (e: any) {
+    alert(e?.data?.error || 'Error al guardar precio base')
+  }
 }
 
 // ── Option Modal ──────────────────────────────────────────────────────────────

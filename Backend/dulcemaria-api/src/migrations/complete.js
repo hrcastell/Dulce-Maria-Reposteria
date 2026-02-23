@@ -339,6 +339,71 @@ async function runCompleteMigrations() {
      ON CONFLICT (id) DO NOTHING;`,
 
     // ============================================
+    // FEATURE: Product Toppings
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS product_toppings (
+      id UUID PRIMARY KEY,
+      product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      type VARCHAR(20) NOT NULL DEFAULT 'ADDITIONAL' CHECK (type IN ('BASE', 'ADDITIONAL')),
+      price_clp INT NOT NULL DEFAULT 0 CHECK (price_clp >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_product_toppings_product_id ON product_toppings(product_id);`,
+    `DROP TRIGGER IF EXISTS trg_product_toppings_updated_at ON product_toppings;`,
+    `CREATE TRIGGER trg_product_toppings_updated_at
+      BEFORE UPDATE ON product_toppings
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // ============================================
+    // FEATURE: System Config (for global settings like cake_base_price)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS system_config (
+      key VARCHAR(100) PRIMARY KEY,
+      value TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    // Seed default cake base price
+    `INSERT INTO system_config (key, value) VALUES ('cake_base_price', '30000') ON CONFLICT (key) DO NOTHING;`,
+
+    // ============================================
+    // FEATURE: Order Items Enhancements (variants & toppings)
+    // ============================================
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100);`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_toppings JSONB;`,
+
+    // ============================================
+    // FEATURE: Automatic Stock Calculation (Trigger)
+    // ============================================
+    `CREATE OR REPLACE FUNCTION update_product_stock_from_variants()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      UPDATE products
+      SET stock_qty = (
+        SELECT COALESCE(SUM(stock_qty), 0)
+        FROM product_variants
+        WHERE product_id = COALESCE(NEW.product_id, OLD.product_id)
+      )
+      WHERE id = COALESCE(NEW.product_id, OLD.product_id);
+      RETURN NULL;
+    END;
+    $$ LANGUAGE plpgsql;`,
+
+    `DROP TRIGGER IF EXISTS trg_update_stock_variants_insert_update ON product_variants;`,
+    `CREATE TRIGGER trg_update_stock_variants_insert_update
+      AFTER INSERT OR UPDATE OF stock_qty, product_id ON product_variants
+      FOR EACH ROW EXECUTE PROCEDURE update_product_stock_from_variants();`,
+
+    `DROP TRIGGER IF EXISTS trg_update_stock_variants_delete ON product_variants;`,
+    `CREATE TRIGGER trg_update_stock_variants_delete
+      AFTER DELETE ON product_variants
+      FOR EACH ROW EXECUTE PROCEDURE update_product_stock_from_variants();`,
+
+
+    // ============================================
     // FIX: Agregar order_code a orders si no existe
     // ============================================
     `DO $$
@@ -351,6 +416,12 @@ async function runCompleteMigrations() {
       END IF;
     EXCEPTION WHEN undefined_table THEN NULL;
     END $$;`,
+
+    // ============================================
+    // FEATURE: Order Price Adjustments
+    // ============================================
+    `ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount_clp INT NOT NULL DEFAULT 0;`,
+    `ALTER TABLE orders ADD COLUMN IF NOT EXISTS final_price_override_clp INT;`,
 
     // ============================================
     // FIX: orders.status constraint — incluir PENDING_PAYMENT
