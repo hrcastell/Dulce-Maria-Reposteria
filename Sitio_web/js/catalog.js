@@ -10,7 +10,7 @@ function getImageUrl(url) {
   if (!url) return null;
   let result;
   if (url.startsWith('https://hrcastell.com/uploads/')) {
-    result = url.replace('https://hrcastell.com/uploads/', 'https://hrcastell.com/dulcemaria/uploads/');
+    result = url.replace('https://hrcastell.com/uploads/', 'https://api.dulcemaria.hrcastell.com/uploads/');
   } else if (url.startsWith('http://') || url.startsWith('https://')) {
     result = url;
   } else {

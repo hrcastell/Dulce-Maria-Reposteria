@@ -1,1 +1,1 @@
-const API_BASE = 'https://hrcastell.com/dulcemaria';
+const API_BASE = 'https://api.dulcemaria.hrcastell.com';

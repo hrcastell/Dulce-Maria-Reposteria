@@ -34,8 +34,8 @@ app.set("trust proxy", 1);
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173", // Vite dev
-  "https://hrcastell.com",
-  "https://www.hrcastell.com",
+  "https://dulcemaria.hrcastell.com",
+  "https://admin.dulcemaria.hrcastell.com",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -112,37 +112,8 @@ app.use("/dulcemaria", apiRouter);
 
 
 // ==========================================
-// SERVIR FRONTEND ESTÁTICO (Rutas Absolutas)
-// ==========================================
-
-const PATH_BASE = "/home/hernanci/public_html/hrcastell.com/dulcemaria";
-const PATH_PORTAL = path.join(PATH_BASE, "portal");
-const PATH_SITE = path.join(PATH_BASE, "site");
-
-// Función para servir SPA
-const serveSpa = (folderPath) => (req, res) => {
-  res.sendFile(path.join(folderPath, "index.html"), (err) => {
-    if (err && !res.headersSent) res.status(404).send("File not found");
-  });
-};
-
-// 1. Portal Admin
-app.use("/portal", express.static(PATH_PORTAL));
-app.use("/dulcemaria/portal", express.static(PATH_PORTAL));
-
-// SPA Fallback para Portal
-app.get("/portal/*", serveSpa(PATH_PORTAL));
-app.get("/dulcemaria/portal/*", serveSpa(PATH_PORTAL));
-
-// 2. Sitio Web
-app.use("/site", express.static(PATH_SITE));
-app.use("/dulcemaria/site", express.static(PATH_SITE));
-
-// 3. Redirecciones Raíz
-app.get("/", (req, res) => res.redirect("site"));
-app.get("/dulcemaria", (req, res) => res.redirect("dulcemaria/site"));
-app.get("/dulcemaria/", (req, res) => res.redirect("site"));
-
+// Frontend ahora se sirve desde subdominios independientes
+// La API solo maneja /uploads para imágenes
 // ==========================================
 
 // 404 (Solo si no coincidió con nada anterior)

@@ -13,12 +13,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: 'https://hrcastell.com/dulcemaria'
+      apiBase: 'https://api.dulcemaria.hrcastell.com'
     }
   },
 
   app: {
-    baseURL: '/dulcemaria/portal/',
+    baseURL: '/',
     head: {
       title: 'Dulce María Repostería',
       meta: [
