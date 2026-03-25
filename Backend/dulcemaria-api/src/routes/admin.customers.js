@@ -36,7 +36,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
         `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
          FROM customers
          ORDER BY created_at DESC
-         LIMIT 50`
+         LIMIT 1000000000`
       );
       return res.json({ ok: true, items: r.rows });
     }
@@ -46,7 +46,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
        FROM customers
        WHERE (email ILIKE $1 OR full_name ILIKE $1 OR phone ILIKE $1)
        ORDER BY created_at DESC
-       LIMIT 50`,
+       LIMIT 1000000000`,
       [`%${q}%`]
     );
 

@@ -30,21 +30,40 @@
     </div>
 
     <div v-else>
+      <!-- Search Bar -->
+      <div class="mb-6">
+        <div class="relative max-w-md">
+          <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <svg class="h-5 w-5 text-warm-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Buscar por orden, cliente, email..."
+            class="block w-full pl-11 pr-4 py-3 border border-warm-200 rounded-xl text-warm-800 placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all duration-200 bg-white"
+            @input="handleSearch"
+          >
+        </div>
+      </div>
+
       <!-- Stats Bar -->
       <div class="flex items-center justify-between mb-6">
         <p class="text-sm text-warm-500">
-          <span class="font-medium text-warm-700">{{ orders.length }}</span> órdenes en total
+          <span class="font-medium text-warm-700">{{ filteredOrders.length }}</span> {{ searchQuery ? 'de ' + orders.length + ' órdenes' : 'órdenes en total' }}
         </p>
       </div>
 
       <!-- Empty State -->
-      <div v-if="orders.length === 0" class="text-center py-16 bg-white rounded-2xl shadow-soft border border-warm-100">
+      <div v-if="filteredOrders.length === 0" class="text-center py-16 bg-white rounded-2xl shadow-soft border border-warm-100">
         <div class="w-20 h-20 bg-warm-50 rounded-full flex items-center justify-center mx-auto mb-4">
           <span class="text-4xl">📦</span>
         </div>
         <h3 class="text-lg font-semibold text-warm-800 mb-2">No hay órdenes</h3>
-        <p class="text-warm-500 mb-6">Aún no tienes pedidos registrados en el sistema</p>
+        <p class="text-warm-500 mb-6">{{ searchQuery ? 'No se encontraron resultados para tu búsqueda' : 'Aún no tienes pedidos registrados en el sistema' }}</p>
         <button
+          v-if="!searchQuery"
           @click="openCreateModal"
           class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200"
         >
@@ -56,7 +75,7 @@
       </div>
 
       <!-- Desktop Table -->
-      <div v-if="orders.length > 0" class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
+      <div v-if="filteredOrders.length > 0" class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
         <table class="min-w-full divide-y divide-warm-100">
           <thead class="bg-warm-50">
             <tr>
@@ -70,7 +89,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-warm-100">
-            <tr v-for="order in orders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
+            <tr v-for="order in filteredOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
               <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
               <td class="px-4 py-3">
                 <div class="text-sm font-medium text-warm-800">{{ order.customer_name }}</div>
@@ -125,8 +144,8 @@
       </div>
 
       <!-- Mobile Cards -->
-      <div v-if="orders.length > 0" class="sm:hidden space-y-3">
-        <div v-for="order in orders" :key="order.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
+      <div v-if="filteredOrders.length > 0" class="sm:hidden space-y-3">
+        <div v-for="order in filteredOrders" :key="order.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
           <div class="flex items-start justify-between">
             <div>
               <p class="font-semibold text-warm-800">#{{ order.order_no }}</p>
@@ -269,6 +288,19 @@ const selectedOrderDetail = ref<any>(null)
 const loadingDetail = ref(false)
 const detailError = ref('')
 const orderToCancel = ref<Order | null>(null)
+const searchQuery = ref('')
+
+const filteredOrders = computed(() => {
+  if (!searchQuery.value) return orders.value
+  const query = searchQuery.value.toLowerCase()
+  return orders.value.filter(o =>
+    o.order_no.toString().includes(query) ||
+    o.customer_name.toLowerCase().includes(query) ||
+    (o.customer_email?.toLowerCase().includes(query) ?? false) ||
+    formatStatus(o.status).toLowerCase().includes(query) ||
+    formatPaymentStatus(o.payment_status).toLowerCase().includes(query)
+  )
+})
 
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat('es-CL').format(price)
@@ -466,6 +498,14 @@ const handleCancelOrder = async () => {
   } finally {
     cancelling.value = false
   }
+}
+
+let searchTimeout: any = null
+const handleSearch = () => {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    // La búsqueda se maneja automáticamente por el computed
+  }, 300)
 }
 
 onMounted(() => {
