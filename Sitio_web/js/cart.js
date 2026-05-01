@@ -49,22 +49,22 @@ function updateCartUI() {
   const cartItemsEl = document.getElementById('cart-items');
   if (cartItemsEl) {
     if (cartItems.length === 0) {
-        cartItemsEl.innerHTML = '<p class="text-gray-400 text-center mt-8">Tu carrito está vacío</p>';
+        cartItemsEl.innerHTML = '<p class="font-body text-dm-brown/40 text-center mt-12 text-sm">Tu carrito está vacío</p>';
     } else {
         cartItemsEl.innerHTML = cartItems.map(item => `
-        <div class="flex items-center gap-3 py-3 border-b border-gray-100">
+        <div class="flex items-center gap-3 py-3 border-b border-dm-cream/60">
           ${item.image
-            ? `<img src="${item.image}" class="w-14 h-14 object-cover rounded-lg flex-shrink-0" onerror="this.style.display='none'">`
-            : `<div class="w-14 h-14 bg-pink-50 rounded-lg flex items-center justify-center flex-shrink-0 text-xl">🍰</div>`}
+            ? `<img src="${item.image}" class="w-14 h-14 object-cover rounded-xl flex-shrink-0 shadow-sm" onerror="this.style.display='none'">`
+            : `<div class="w-14 h-14 bg-dm-pink/10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl">🍰</div>`}
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-gray-800 truncate">${item.name}</p>
-            <p class="text-sm text-pink-500 font-semibold">$${formatPrice(item.price)}</p>
+            <p class="font-body text-sm font-medium text-dm-brown truncate">${item.name}</p>
+            <p class="font-body text-sm text-dm-pink font-semibold">$${formatPrice(item.price)}</p>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <button onclick="changeQty('${item.key}', -1)" class="w-7 h-7 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
-            <span class="w-6 text-center text-sm font-medium">${item.qty}</span>
-            <button onclick="changeQty('${item.key}', 1)" class="w-7 h-7 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 flex items-center justify-center font-bold" ${item.qty >= item.stock ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>+</button>
-            <button onclick="removeItem('${item.key}')" class="ml-1 text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+            <button onclick="changeQty('${item.key}', -1)" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs">−</button>
+            <span class="w-6 text-center font-body text-sm font-medium text-dm-brown">${item.qty}</span>
+            <button onclick="changeQty('${item.key}', 1)" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs" ${item.qty >= item.stock ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>+</button>
+            <button onclick="removeItem('${item.key}')" class="ml-1 text-red-400 hover:text-red-600 text-lg leading-none transition-colors duration-200">×</button>
           </div>
         </div>`).join('');
     }
@@ -112,9 +112,9 @@ function openPaymentModal() {
   const summaryEl = document.getElementById('payment-order-summary');
   if (summaryEl) {
       summaryEl.innerHTML = cartItems.map(i =>
-        `<div class="flex justify-between text-sm py-1">
-          <span class="text-gray-700">${i.name} × ${i.qty}</span>
-          <span class="font-medium">$${formatPrice(i.price * i.qty)}</span>
+        `<div class="flex justify-between text-sm py-1 font-body">
+          <span class="text-dm-brown/70">${i.name} × ${i.qty}</span>
+          <span class="font-medium text-dm-brown">$${formatPrice(i.price * i.qty)}</span>
         </div>`
       ).join('');
   }

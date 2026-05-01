@@ -32,8 +32,8 @@ function showSlide(index) {
     // Actualizar los dots
     if (dots && dots.length > 0) {
         dots.forEach((dot, idx) => {
-            dot.classList.toggle('bg-pink-500', idx === currentSlide);
-            dot.classList.toggle('bg-gray-300', idx !== currentSlide);
+            dot.classList.toggle('bg-dm-pink', idx === currentSlide);
+            dot.classList.toggle('bg-white/50', idx !== currentSlide);
         });
     }
 }

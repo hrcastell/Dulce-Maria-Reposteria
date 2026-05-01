@@ -31,7 +31,7 @@ async function loadCakeBuilder() {
     console.log('Cake Builder Config:', data); // Debug log
 
     if (!data.ok || !data.categories || data.categories.length === 0) {
-      document.getElementById('cake-loading').innerHTML = '<p class="text-gray-400">No hay opciones disponibles aún.</p>';
+      document.getElementById('cake-loading').innerHTML = '<p class="font-body text-dm-brown/40 text-sm">No hay opciones disponibles aún.</p>';
       return;
     }
     
@@ -56,7 +56,7 @@ async function loadCakeBuilder() {
     updatePriceDisplay();
   } catch (e) {
     console.error('Error loading cake builder:', e);
-    document.getElementById('cake-loading').innerHTML = '<p class="text-gray-400">Error al cargar opciones. Intenta más tarde.</p>';
+    document.getElementById('cake-loading').innerHTML = '<p class="font-body text-dm-brown/40 text-sm">Error al cargar opciones. Intenta más tarde.</p>';
   }
 }
 
@@ -69,13 +69,13 @@ function renderProgressBar() {
     const isDone = i < currentStep;
     return `
       <div class="flex-1 flex flex-col items-center">
-        <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors
-          ${isDone ? 'bg-turquoise-500 text-white' : isActive ? 'bg-pink-500 text-white' : 'bg-gray-200 text-gray-500'}">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors font-body
+          ${isDone ? 'bg-dm-mint text-dm-brown' : isActive ? 'bg-dm-pink text-dm-brown' : 'bg-dm-cream text-dm-brown/40'}">
           ${isDone ? '✓' : i + 1}
         </div>
-        <span class="text-xs mt-1 ${isActive ? 'text-pink-500 font-semibold' : 'text-gray-400'} hidden sm:block">${cat.label}</span>
+        <span class="text-xs mt-1 font-body ${isActive ? 'text-dm-brown font-semibold' : 'text-dm-brown/40'} hidden sm:block">${cat.label}</span>
       </div>
-      ${i < cakeCategories.length - 1 ? `<div class="flex-1 h-0.5 mt-4 ${i < currentStep ? 'bg-turquoise-400' : 'bg-gray-200'}"></div>` : ''}
+      ${i < cakeCategories.length - 1 ? `<div class="flex-1 h-0.5 mt-4 ${i < currentStep ? 'bg-dm-mint' : 'bg-dm-cream'}"></div>` : ''}
     `;
   }).join('');
 }
@@ -89,24 +89,24 @@ function renderCurrentStep() {
   const container = document.getElementById('cake-steps-container');
   container.innerHTML = `
     <div class="p-6 sm:p-8">
-      <h3 class="text-2xl font-bold text-gray-800 mb-1">${cat.label}</h3>
-      <p class="text-gray-400 text-sm mb-6">Elige una opción para continuar</p>
+      <h3 class="font-display text-2xl font-bold text-dm-brown mb-1">${cat.label}</h3>
+      <p class="font-body text-dm-brown/40 text-sm mb-6">Elige una opción para continuar</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         ${cat.options.map(opt => {
           const isSel = selected?.id === opt.id;
           return `
             <button
               onclick="selectCakeOption('${cat.type}', '${opt.id}', '${opt.label.replace(/'/g, "\\'")}', ${opt.extra_price_clp || 0}, '${cat.id}')"
-              class="text-left p-4 rounded-xl border-2 transition-all duration-150 ${isSel
-                ? 'border-pink-400 bg-pink-50 shadow-md'
-                : 'border-gray-200 hover:border-turquoise-400 hover:bg-turquoise-50'}"
+              class="text-left p-4 rounded-xl border-2 transition-all duration-200 font-body ${isSel
+                ? 'border-dm-pink bg-dm-pink/10 shadow-sm'
+                : 'border-dm-cream hover:border-dm-mint hover:bg-dm-mint/10'}"
             >
               <div class="flex justify-between items-start">
-                <span class="font-semibold text-gray-800">${opt.label}</span>
-                ${isSel ? '<span class="text-pink-400 text-xl">✓</span>' : ''}
+                <span class="font-semibold text-dm-brown">${opt.label}</span>
+                ${isSel ? '<span class="text-dm-pink text-xl">✓</span>' : ''}
               </div>
-              ${opt.description ? `<p class="text-sm text-gray-500 mt-1">${opt.description}</p>` : ''}
-              <span class="text-sm font-medium mt-2 block ${opt.extra_price_clp > 0 ? 'text-orange-500' : 'text-gray-400'}">
+              ${opt.description ? `<p class="text-sm text-dm-brown/50 mt-1">${opt.description}</p>` : ''}
+              <span class="text-sm font-medium mt-2 block ${opt.extra_price_clp > 0 ? 'text-dm-brown' : 'text-dm-brown/40'}">
                 ${opt.extra_price_clp > 0 ? `+$${fmtPrice(opt.extra_price_clp)}` : 'Incluido'}
               </span>
             </button>
@@ -157,9 +157,9 @@ function openCakeModal() {
   if (summaryEl) {
     summaryEl.innerHTML = cakeCategories.map(cat => {
       const sel = cakeSelections[cat.type];
-      return `<div class="flex justify-between">
-        <span class="text-gray-500">${cat.label}:</span>
-        <span class="font-medium">${sel?.label || '—'}${sel?.extra_price_clp > 0 ? ` (+$${fmtPrice(sel.extra_price_clp)})` : ''}</span>
+      return `<div class="flex justify-between font-body">
+        <span class="text-dm-brown/50">${cat.label}:</span>
+        <span class="font-medium text-dm-brown">${sel?.label || '—'}${sel?.extra_price_clp > 0 ? ` (+$${fmtPrice(sel.extra_price_clp)})` : ''}</span>
       </div>`;
     }).join('');
   }

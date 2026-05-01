@@ -66,36 +66,36 @@ function productCard(product) {
   const outOfStock = totalStock === 0;
 
   const imgHtml = imgUrl
-    ? `<img src="${imgUrl}" alt="${product.name}" class="w-full h-56 object-cover" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-56 bg-pink-50 flex items-center justify-center text-5xl\\'>🍰</div>'">`
-    : `<div class="w-full h-56 bg-pink-50 flex items-center justify-center text-5xl">🍰</div>`;
+    ? `<img src="${imgUrl}" alt="${product.name}" class="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500 ease-out" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl\\'>🍰</div>'">`
+    : `<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>`;
 
   const variantSelect = hasVariants ? `
     <select id="variant-${product.id}" onchange="onVariantChange('${product.id}')"
-      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+      class="w-full border border-dm-cream rounded-xl px-3 py-2 text-sm mb-3 font-body text-dm-brown bg-white focus:outline-none focus:ring-2 focus:ring-dm-mint transition-all duration-200">
       ${product.variants.filter(v => v.is_active !== false).map(v =>
         `<option value="${v.id}" data-price="${v.price_clp ?? product.price_clp}" data-stock="${v.stock_qty}">${v.name}${v.price_clp && v.price_clp !== product.price_clp ? ' — $' + formatPrice(v.price_clp) : ''}</option>`
       ).join('')}
     </select>` : '';
 
   const addBtn = outOfStock
-    ? `<button disabled class="w-full bg-gray-200 text-gray-500 px-4 py-2 rounded-lg text-sm cursor-not-allowed">Sin stock</button>`
+    ? `<button disabled class="w-full bg-dm-cream text-dm-brown/40 px-4 py-2.5 rounded-xl text-sm font-body font-medium cursor-not-allowed">Sin stock</button>`
     : `<button onclick="addToCartFromCard('${product.id}')"
          id="add-btn-${product.id}"
-         class="w-full bg-turquoise-600 text-white px-4 py-2 rounded-lg hover:bg-turquoise-500 transition-colors text-sm font-medium">
+         class="w-full bg-dm-brown text-white px-4 py-2.5 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 text-sm font-body font-semibold shadow-sm hover:shadow-md">
          Agregar al carrito
        </button>`;
 
   return `
-    <div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200" id="card-${product.id}">
+    <div class="group bg-white rounded-2xl border border-dm-cream overflow-hidden hover:shadow-lg hover:shadow-dm-brown/5 transition-all duration-300 ease-out" id="card-${product.id}">
       <div class="overflow-hidden">${imgHtml}</div>
-      <div class="p-5">
-        <h3 class="text-lg font-bold text-gray-800 mb-1">${product.name}</h3>
-        ${product.description ? `<p class="text-gray-500 text-sm mb-3 line-clamp-2">${product.description}</p>` : ''}
+      <div class="p-4">
+        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${product.name}</h3>
+        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs mb-3 line-clamp-2 leading-relaxed">${product.description}</p>` : ''}
         <div class="flex justify-between items-center mb-3">
-          <span class="text-xl font-bold text-pink-500" id="price-${product.id}">$${formatPrice(product.price_clp)}</span>
+          <span class="inline-flex items-center px-2.5 py-1 bg-dm-brown text-white rounded-lg font-body text-sm font-bold" id="price-${product.id}">$${formatPrice(product.price_clp)}</span>
           ${outOfStock
-            ? '<span class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">Sin stock</span>'
-            : `<span class="text-xs text-gray-400">Stock: <span id="stock-${product.id}">${totalStock}</span></span>`}
+            ? '<span class="text-[10px] font-body font-semibold uppercase tracking-wider bg-red-50 text-red-500 px-2 py-1 rounded-full">Sin stock</span>'
+            : `<span class="text-[10px] font-body font-medium text-dm-brown/40">Stock: <span id="stock-${product.id}">${totalStock}</span></span>`}
         </div>
         ${variantSelect}
         ${addBtn}
@@ -119,11 +119,11 @@ function onVariantChange(productId) {
     if (stock === 0) {
       btn.disabled = true;
       btn.textContent = 'Sin stock';
-      btn.className = 'w-full bg-gray-200 text-gray-500 px-4 py-2 rounded-lg text-sm cursor-not-allowed';
+      btn.className = 'w-full bg-dm-cream text-dm-brown/40 px-4 py-2.5 rounded-xl text-sm font-body font-medium cursor-not-allowed';
     } else {
       btn.disabled = false;
       btn.textContent = 'Agregar al carrito';
-      btn.className = 'w-full bg-turquoise-600 text-white px-4 py-2 rounded-lg hover:bg-turquoise-500 transition-colors text-sm font-medium';
+      btn.className = 'w-full bg-dm-brown text-white px-4 py-2.5 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 text-sm font-body font-semibold shadow-sm hover:shadow-md';
     }
   }
 }
