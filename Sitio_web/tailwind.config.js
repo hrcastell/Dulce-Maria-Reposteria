@@ -2,19 +2,21 @@
 module.exports = {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./js/**/*.js",
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ['"Playfair Display"', 'serif'],
+        body: ['Montserrat', 'sans-serif'],
+      },
       colors: {
-        'turquoise': {
-          100: '#d0f3f3',
-          500: '#40cece',
-          600: '#2fb8b8',
-        },
-        'pastel': {
-          'blue': '#E3F2FD',
-          'blue-dark': '#BBDEFB'
+        dm: {
+          sky: '#D6E6EA',
+          pink: '#F5C4CF',
+          brown: '#8B5A3C',
+          cream: '#ECE8E2',
+          mint: '#BFD8D5',
         }
       }
     },

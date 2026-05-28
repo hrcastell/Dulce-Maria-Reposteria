@@ -4,27 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dulce María Repostería</title>
-  <!-- Tailwind CSS desde CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            turquoise: {
-              100: '#d0f3f3',
-              500: '#40cece',
-              600: '#2fb8b8',
-            },
-            pastel: {
-              blue: '#E3F2FD',
-              'blue-dark': '#BBDEFB',
-            }
-          }
-        }
-      }
-    }
-  </script>
+
+  <!-- Google Fonts: Playfair Display + Montserrat -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS compilado (sin CDN, compatible con CSP estricta) -->
+  <link rel="stylesheet" href="css/styles.css">
 
   <!-- Scripts -->
   <script src="js/config.js"></script>
@@ -34,30 +21,30 @@
   <script src="js/hero.js" defer></script>
   <script src="js/cake-builder.js" defer></script>
 </head>
-<body class="bg-blue-50">
+<body class="bg-dm-cream font-body antialiased overflow-x-hidden">
     <!-- Navbar -->
-    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-sm shadow-lg">
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-md border-b border-dm-cream/80">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between items-center h-16">
                 <div class="flex items-center">
-                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-12">
+                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-12 max-w-[150px] w-auto">
                 </div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="#inicio" class="text-turquoise-600 hover:text-pink-400 transition-colors">Inicio</a>
-                    <a href="#catalogo" class="text-turquoise-600 hover:text-pink-400 transition-colors">Catálogo</a>
-                    <a href="#personalizar" class="text-turquoise-600 hover:text-pink-400 transition-colors">Personalizar</a>
-                    <a href="#contacto" class="text-turquoise-600 hover:text-pink-400 transition-colors">Contacto</a>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#inicio" class="text-dm-brown hover:text-dm-pink transition-colors duration-300 text-sm font-semibold tracking-wide uppercase">Inicio</a>
+                    <a href="#catalogo" class="text-dm-brown hover:text-dm-pink transition-colors duration-300 text-sm font-semibold tracking-wide uppercase">Catálogo</a>
+                    <a href="#personalizar" class="text-dm-brown hover:text-dm-pink transition-colors duration-300 text-sm font-semibold tracking-wide uppercase">Personalizar</a>
+                    <a href="#contacto" class="text-dm-brown hover:text-dm-pink transition-colors duration-300 text-sm font-semibold tracking-wide uppercase">Contacto</a>
                 </div>
                 <div class="flex items-center gap-3">
                     <a href="https://admin.dulcemaria.hrcastell.com/"
-                       class="hidden md:inline-flex items-center px-4 py-2 rounded-full bg-turquoise-600 text-white text-sm font-medium hover:bg-turquoise-500 transition-colors">
+                       class="hidden md:inline-flex items-center px-4 py-2 rounded-xl border border-dm-brown text-dm-brown text-sm font-semibold hover:bg-dm-brown hover:text-white transition-all duration-300">
                         Ingresar
                     </a>
-                    <button onclick="toggleCart()" class="relative p-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <button id="cart-toggle-btn" class="relative p-2 hover:bg-dm-cream rounded-xl transition-colors duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-dm-brown" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
-                        <span id="cart-count" class="absolute -top-1 -right-1 bg-pink-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                        <span id="cart-count" class="absolute -top-1 -right-1 bg-dm-pink text-dm-brown text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
                     </button>
                 </div>
             </div>
@@ -66,47 +53,50 @@
 
     <!-- Hero Section with Carousel -->
     <section id="inicio" class="pt-16">
-        <div class="carousel relative h-[600px] overflow-hidden">
-            <!-- Slide 1 -->
-            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
-                <div class="relative h-full bg-gradient-to-r from-blue-100 via-pink-100 to-turquoise-100">
+        <div class="carousel relative h-[500px] md:h-[600px] overflow-hidden bg-dm-cream">
+            <!-- Fallback Slide 1 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-700 ease-in-out">
+                <div class="relative h-full w-full">
+                    <div class="absolute inset-0 bg-gradient-to-br from-dm-sky/60 via-dm-pink/40 to-dm-cream/80"></div>
                     <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="text-center px-4">
-                            <h1 class="text-5xl font-bold text-pink-500 mb-6">¡Ofertas Especiales!</h1>
-                            <p class="text-2xl text-turquoise-600 mb-8">30% de descuento en tortas personalizadas</p>
-                            <button class="bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-400 transition-colors">
+                        <div class="text-center px-4 max-w-3xl mx-auto">
+                            <h1 class="font-display text-4xl md:text-6xl font-bold text-dm-brown mb-4 drop-shadow-sm tracking-tight">¡Ofertas Especiales!</h1>
+                            <p class="font-body text-lg md:text-2xl text-dm-brown/80 mb-8 font-light">30% de descuento en tortas personalizadas</p>
+                            <a href="#catalogo" class="inline-block bg-dm-pink text-dm-brown px-8 py-3 rounded-xl hover:bg-dm-brown hover:text-white transition-all duration-300 font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5">
                                 Ver Ofertas
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Slide 2 -->
-            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
-                <div class="relative h-full bg-gradient-to-r from-pink-100 via-turquoise-100 to-blue-100">
+            <!-- Fallback Slide 2 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-700 ease-in-out">
+                <div class="relative h-full w-full">
+                    <div class="absolute inset-0 bg-gradient-to-br from-dm-pink/60 via-dm-mint/40 to-dm-cream/80"></div>
                     <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="text-center px-4">
-                            <h1 class="text-5xl font-bold text-turquoise-600 mb-6">Cupcakes Artesanales</h1>
-                            <p class="text-2xl text-pink-500 mb-8">¡Nuevos sabores cada semana!</p>
-                            <button class="bg-turquoise-600 text-white px-8 py-3 rounded-lg hover:bg-turquoise-500 transition-colors">
+                        <div class="text-center px-4 max-w-3xl mx-auto">
+                            <h1 class="font-display text-4xl md:text-6xl font-bold text-dm-brown mb-4 drop-shadow-sm tracking-tight">Cupcakes Artesanales</h1>
+                            <p class="font-body text-lg md:text-2xl text-dm-brown/80 mb-8 font-light">¡Nuevos sabores cada semana!</p>
+                            <a href="#catalogo" class="inline-block bg-dm-pink text-dm-brown px-8 py-3 rounded-xl hover:bg-dm-brown hover:text-white transition-all duration-300 font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5">
                                 Ver Catálogo
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Slide 3 -->
-            <div class="carousel-slide absolute inset-0 transition-opacity duration-500 ease-in-out">
-                <div class="relative h-full bg-gradient-to-r from-turquoise-100 via-blue-100 to-pink-100">
+            <!-- Fallback Slide 3 -->
+            <div class="carousel-slide absolute inset-0 transition-opacity duration-700 ease-in-out">
+                <div class="relative h-full w-full">
+                    <div class="absolute inset-0 bg-gradient-to-br from-dm-mint/60 via-dm-sky/40 to-dm-cream/80"></div>
                     <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="text-center px-4">
-                            <h1 class="text-5xl font-bold text-blue-600 mb-6">Tortas para Eventos</h1>
-                            <p class="text-2xl text-pink-500 mb-8">Diseños únicos para momentos especiales</p>
-                            <button class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-500 transition-colors">
+                        <div class="text-center px-4 max-w-3xl mx-auto">
+                            <h1 class="font-display text-4xl md:text-6xl font-bold text-dm-brown mb-4 drop-shadow-sm tracking-tight">Tortas para Eventos</h1>
+                            <p class="font-body text-lg md:text-2xl text-dm-brown/80 mb-8 font-light">Diseños únicos para momentos especiales</p>
+                            <a href="#personalizar" class="inline-block bg-dm-pink text-dm-brown px-8 py-3 rounded-xl hover:bg-dm-brown hover:text-white transition-all duration-300 font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5">
                                 Personalizar
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -114,94 +104,113 @@
 
             <!-- Carousel Controls -->
             <div class="carousel-controls">
-                <button onclick="prevSlide()" class="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/80 p-2 rounded-full shadow-lg hover:bg-white transition-colors z-20">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                <button id="hero-prev" class="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
                     </svg>
                 </button>
-                <button onclick="nextSlide()" class="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/80 p-2 rounded-full shadow-lg hover:bg-white transition-colors z-20">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-turquoise-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                <button id="hero-next" class="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                 </button>
             </div>
 
-            <!-- Carousel Indicators -->
-            <div class="carousel-indicators absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2 z-20">
-                <button onclick="showSlide(0)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
-                <button onclick="showSlide(1)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
-                <button onclick="showSlide(2)" class="carousel-dot w-3 h-3 rounded-full bg-gray-300 hover:bg-pink-400 transition-colors"></button>
+            <!-- Carousel Indicators (capsules) -->
+            <div class="carousel-indicators absolute bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-3 z-20">
+                <button data-slide="0" class="carousel-dot h-1.5 w-8 rounded-full bg-white/50 hover:bg-dm-pink transition-all duration-300"></button>
+                <button data-slide="1" class="carousel-dot h-1.5 w-8 rounded-full bg-white/50 hover:bg-dm-pink transition-all duration-300"></button>
+                <button data-slide="2" class="carousel-dot h-1.5 w-8 rounded-full bg-white/50 hover:bg-dm-pink transition-all duration-300"></button>
             </div>
         </div>
     </section>
 
     <!-- Catálogo / Productos Section -->
-    <section id="catalogo" class="py-16 bg-white">
+    <section id="catalogo" class="py-20 bg-white">
         <div class="max-w-7xl mx-auto px-4">
-            <h2 class="text-4xl font-bold text-center text-pink-500 mb-4">Nuestros Productos</h2>
-            <p class="text-center text-gray-500 mb-12">Elaborados con ingredientes frescos y mucho amor 🍰</p>
+            <div class="text-center mb-14">
+                <span class="inline-block text-xs font-semibold tracking-[0.2em] uppercase text-dm-pink mb-2">Hechos con amor</span>
+                <h2 class="font-display text-4xl md:text-5xl font-bold text-dm-brown mb-3">Nuestros Productos</h2>
+                <p class="font-body text-dm-brown/60 max-w-md mx-auto">Elaborados con ingredientes frescos y mucho cariño para endulzar tus momentos especiales.</p>
+            </div>
 
             <!-- Loading state -->
-            <div id="catalog-loading" class="text-center py-16">
-                <div class="inline-block w-10 h-10 border-4 border-turquoise-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p class="text-gray-400">Cargando productos...</p>
+            <div id="catalog-loading" class="text-center py-20">
+                <div class="inline-block w-10 h-10 border-[3px] border-dm-pink border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="font-body text-dm-brown/40 text-sm">Cargando productos...</p>
             </div>
 
             <!-- Products grid -->
-            <div id="catalog-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 hidden"></div>
+            <div id="catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 hidden"></div>
+
+            <!-- Out of stock section -->
+            <div id="catalog-outofstock-title" class="hidden mt-16 mb-8">
+                <div class="flex items-center gap-4">
+                    <div class="flex-1 h-px bg-dm-cream"></div>
+                    <span class="font-display text-2xl font-bold text-dm-brown/60">Próximamente</span>
+                    <div class="flex-1 h-px bg-dm-cream"></div>
+                </div>
+                <p class="font-body text-dm-brown/40 text-sm text-center mt-2">Estos productos estarán disponibles muy pronto</p>
+            </div>
+            <div id="catalog-outofstock-grid" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"></div>
 
             <!-- Empty state -->
-            <div id="catalog-empty" class="hidden text-center py-16">
-                <p class="text-gray-400 text-xl">No hay productos disponibles en este momento.</p>
+            <div id="catalog-empty" class="hidden text-center py-20">
+                <div class="text-5xl mb-4 opacity-40">🍰</div>
+                <p class="font-body text-dm-brown/50 text-lg">No hay productos disponibles en este momento.</p>
+                <p class="font-body text-dm-brown/30 text-sm mt-1">Vuelve pronto para descubrir nuevas delicias.</p>
             </div>
         </div>
     </section>
 
     <!-- Personalizar Section — Cake Builder Stepper -->
-    <section id="personalizar" class="py-16 bg-gradient-to-r from-pink-100 via-blue-100 to-turquoise-100">
+    <section id="personalizar" class="py-20 bg-dm-cream">
         <div class="max-w-4xl mx-auto px-4">
-            <h2 class="text-4xl font-bold text-center text-pink-500 mb-2">Diseña tu Torta</h2>
-            <p class="text-center text-gray-500 mb-10">Paso a paso, armamos la torta perfecta para ti 🎂</p>
+            <div class="text-center mb-12">
+                <span class="inline-block text-xs font-semibold tracking-[0.2em] uppercase text-dm-pink mb-2">Crea algo único</span>
+                <h2 class="font-display text-4xl md:text-5xl font-bold text-dm-brown mb-3">Diseña tu Torta</h2>
+                <p class="font-body text-dm-brown/60 max-w-md mx-auto">Paso a paso, armamos la torta perfecta para ti 🎂</p>
+            </div>
 
             <!-- Loading -->
-            <div id="cake-loading" class="text-center py-12">
-                <div class="inline-block w-10 h-10 border-4 border-turquoise-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p class="text-gray-400">Cargando opciones...</p>
+            <div id="cake-loading" class="text-center py-16">
+                <div class="inline-block w-10 h-10 border-[3px] border-dm-pink border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="font-body text-dm-brown/40 text-sm">Cargando opciones...</p>
             </div>
 
             <!-- Stepper container -->
             <div id="cake-stepper" class="hidden">
                 <!-- Progress bar -->
-                <div class="flex items-center mb-8" id="cake-progress-bar"></div>
+                <div class="flex items-center mb-10" id="cake-progress-bar"></div>
 
                 <!-- Steps -->
-                <div id="cake-steps-container" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+                <div id="cake-steps-container" class="bg-white rounded-2xl shadow-sm border border-dm-cream overflow-hidden">
                     <!-- Rendered by JS -->
                 </div>
 
                 <!-- Navigation -->
-                <div class="flex justify-between mt-6">
-                    <button id="cake-prev-btn" onclick="cakePrev()"
-                        class="px-6 py-3 border border-gray-300 text-gray-700 rounded-full hover:bg-gray-50 transition-colors hidden">
+                <div class="flex justify-between mt-8">
+                    <button id="cake-prev-btn"
+                        class="px-6 py-3 border border-dm-cream text-dm-brown rounded-xl hover:bg-dm-cream transition-all duration-300 font-medium hidden">
                         ← Anterior
                     </button>
                     <div class="ml-auto">
-                        <button id="cake-next-btn" onclick="cakeNext()"
-                            class="px-8 py-3 bg-turquoise-600 text-white rounded-full hover:bg-turquoise-500 transition-colors font-semibold">
+                        <button id="cake-next-btn"
+                            class="px-8 py-3 bg-dm-brown text-white rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 font-semibold shadow-sm hover:shadow-md">
                             Siguiente →
                         </button>
                     </div>
                 </div>
 
                 <!-- Price summary (sticky) -->
-                <div class="mt-6 bg-white rounded-xl shadow p-4 flex flex-wrap gap-4 items-center justify-between">
+                <div class="mt-8 bg-white rounded-2xl shadow-sm border border-dm-cream p-6 flex flex-wrap gap-4 items-center justify-between">
                     <div>
-                        <p class="text-sm text-gray-500">Precio estimado</p>
-                        <p id="cake-price-display" class="text-3xl font-bold text-pink-500">$0</p>
+                        <p class="font-body text-xs font-medium text-dm-brown/50 uppercase tracking-wide">Precio estimado</p>
+                        <p id="cake-price-display" class="font-display text-3xl font-bold text-dm-brown mt-1">$0</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm text-gray-500">Abono requerido (50%)</p>
-                        <p id="cake-deposit-display" class="text-xl font-semibold text-turquoise-600">$0</p>
+                        <p class="font-body text-xs font-medium text-dm-brown/50 uppercase tracking-wide">Abono requerido (50%)</p>
+                        <p id="cake-deposit-display" class="font-body text-xl font-semibold text-dm-pink mt-1">$0</p>
                     </div>
                 </div>
             </div>
@@ -210,97 +219,93 @@
 
     <!-- Cake Order Modal -->
     <div id="cake-order-modal" class="fixed inset-0 z-[60] hidden">
-        <div class="absolute inset-0 bg-black/50" onclick="closeCakeModal()"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div id="cake-modal-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl border border-dm-cream w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <!-- Step 1 -->
             <div id="cake-modal-step-1">
-                <div class="p-6 border-b border-gray-100">
-                    <h3 class="text-xl font-bold text-turquoise-600">Confirmar pedido de torta</h3>
+                <div class="p-6 border-b border-dm-cream">
+                    <h3 class="font-display text-xl font-bold text-dm-brown">Confirmar pedido de torta</h3>
                 </div>
                 <div class="p-6 space-y-4">
                     <!-- Resumen configuración -->
-                    <div class="bg-gray-50 rounded-lg p-4">
-                        <h4 class="font-semibold text-gray-700 mb-2">Tu torta personalizada</h4>
-                        <div id="cake-config-summary" class="text-sm text-gray-600 space-y-1"></div>
-                        <div class="border-t border-gray-200 mt-3 pt-3 flex justify-between font-bold">
-                            <span>Total</span>
-                            <span id="cake-modal-total" class="text-pink-500"></span>
+                    <div class="bg-dm-cream/50 rounded-xl p-4">
+                        <h4 class="font-body font-semibold text-dm-brown mb-2">Tu torta personalizada</h4>
+                        <div id="cake-config-summary" class="font-body text-sm text-dm-brown/70 space-y-1"></div>
+                        <div class="border-t border-dm-cream mt-3 pt-3 flex justify-between font-bold font-body">
+                            <span class="text-dm-brown">Total</span>
+                            <span id="cake-modal-total" class="text-dm-pink"></span>
                         </div>
-                        <div class="flex justify-between text-sm mt-1">
-                            <span class="text-gray-500">Abono 50% ahora</span>
-                            <span id="cake-modal-deposit" class="text-turquoise-600 font-semibold"></span>
+                        <div class="flex justify-between text-sm mt-1 font-body">
+                            <span class="text-dm-brown/50">Abono 50% ahora</span>
+                            <span id="cake-modal-deposit" class="text-dm-brown font-semibold"></span>
                         </div>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Nombre completo *</label>
-                        <input id="cake-customer-name" type="text" placeholder="Tu nombre" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Nombre completo *</label>
+                        <input id="cake-customer-name" type="text" placeholder="Tu nombre" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                        <input id="cake-customer-phone" type="tel" placeholder="+56 9 XXXX XXXX" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Teléfono *</label>
+                        <input id="cake-customer-phone" type="tel" placeholder="+56 9 XXXX XXXX" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Dirección de entrega</label>
-                        <input id="cake-customer-address" type="text" placeholder="Calle, número, comuna" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Dirección de entrega</label>
+                        <input id="cake-customer-address" type="text" placeholder="Calle, número, comuna" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Notas adicionales</label>
-                        <textarea id="cake-customer-notes" rows="2" placeholder="Mensaje en la torta, fecha especial..." class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500"></textarea>
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Notas adicionales</label>
+                        <textarea id="cake-customer-notes" rows="2" placeholder="Mensaje en la torta, fecha especial..." class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200"></textarea>
                     </div>
-                    <!-- Bank info -->
-                    <div class="bg-turquoise-100 rounded-lg p-4 text-sm">
-                        <h4 class="font-bold text-turquoise-700 mb-2">💳 Abono por transferencia (50%)</h4>
-                        <p><strong>Banco:</strong> BancoEstado</p>
-                        <p><strong>Tipo:</strong> Cuenta RUT</p>
-                        <p><strong>RUT:</strong> XX.XXX.XXX-X</p>
-                        <p><strong>Nombre:</strong> María Dulce Repostería</p>
-                        <p class="mt-2 text-turquoise-600 font-medium">📱 Envía el comprobante por WhatsApp al +56 9 3242 3459</p>
+                    <div class="bg-dm-sky/40 rounded-xl p-4 text-sm font-body text-dm-brown">
+                        <h4 class="font-bold text-dm-brown mb-2 flex items-center gap-2">
+                            <span>�</span> Coordinación del pedido
+                        </h4>
+                        <p>Te contactaremos por WhatsApp para coordinar el pago y la entrega de tu torta.</p>
                     </div>
-                    <div id="cake-modal-error" class="hidden text-red-600 text-sm bg-red-50 rounded-lg p-3"></div>
+                    <div id="cake-modal-error" class="hidden text-red-600 text-sm bg-red-50 rounded-xl p-3 font-body"></div>
                     <div class="flex gap-3">
-                        <button onclick="closeCakeModal()" class="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-50">Cancelar</button>
-                        <button onclick="submitCakeOrder()" id="cake-confirm-btn" class="flex-1 bg-pink-500 text-white py-3 rounded-lg hover:bg-pink-400 font-semibold">
+                        <button id="cake-modal-cancel" class="flex-1 border border-dm-cream text-dm-brown py-3 rounded-xl hover:bg-dm-cream transition-all duration-300 font-body font-medium">Cancelar</button>
+                        <button id="cake-confirm-btn" class="flex-1 bg-dm-brown text-white py-3 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 font-body font-semibold">
                             Enviar pedido
                         </button>
                     </div>
                 </div>
-            </div>
-            <!-- Step 2: Success -->
             <div id="cake-modal-step-2" class="hidden p-8 text-center">
-                <div class="text-6xl mb-4">🎂</div>
-                <h3 class="text-2xl font-bold text-turquoise-600 mb-2">¡Pedido de torta recibido!</h3>
-                <p class="text-gray-600 mb-1">N° <strong id="cake-order-number-display"></strong></p>
-                <p class="text-gray-600 mb-6">Envíanos el comprobante del abono del <strong>50%</strong> por WhatsApp para confirmar tu pedido.</p>
+                <div class="text-5xl mb-4">🎂</div>
+                <h3 class="font-display text-2xl font-bold text-dm-brown mb-2">¡Pedido de torta recibido!</h3>
+                <p class="font-body text-dm-brown/70 mb-2">Tu pedido N° <strong id="cake-order-number-display" class="text-dm-brown"></strong> fue registrado con éxito.</p>
+                <p class="font-body text-dm-brown/70 mb-6">Te contactaremos por WhatsApp para coordinar el pago y la entrega de tu pedido.</p>
                 <a id="cake-whatsapp-link" href="#" target="_blank"
-                   class="inline-flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-full hover:bg-green-400 font-semibold mb-4">
+                   class="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-xl hover:bg-[#128C7E] transition-all duration-300 font-body font-semibold mb-4 shadow-sm hover:shadow-md">
                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     Enviar comprobante por WhatsApp
                 </a><br>
-                <button onclick="closeCakeModal()" class="text-gray-500 hover:text-gray-700 text-sm underline">Cerrar</button>
+                <button id="cake-modal-close" class="font-body text-dm-brown/50 hover:text-dm-brown text-sm underline transition-colors duration-200">Cerrar</button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- Cart Sidebar -->
-    <div id="cart-sidebar" class="fixed top-0 right-0 h-full w-96 bg-white shadow-2xl transform translate-x-full transition-transform duration-300 ease-in-out z-50">
+    <div id="cart-sidebar" class="fixed top-0 right-0 h-full w-full max-w-[360px] bg-white shadow-2xl border-l border-dm-cream transform translate-x-full transition-transform duration-300 ease-in-out z-50">
         <div class="p-6 h-full flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-turquoise-600">Carrito de Compras</h2>
-                <button onclick="toggleCart()" class="text-gray-500 hover:text-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <div class="flex justify-between items-center mb-8 pb-4 border-b border-dm-cream">
+                <h2 class="font-display text-xl font-bold text-dm-brown">Tu Carrito</h2>
+                <button id="cart-close-btn" class="text-dm-brown/40 hover:text-dm-brown p-1 hover:bg-dm-cream rounded-lg transition-all duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
             <div id="cart-items" class="flex-1 overflow-y-auto">
-                <p class="text-gray-400 text-center mt-8">Tu carrito está vacío</p>
+                <p class="font-body text-dm-brown/40 text-center mt-12 text-sm">Tu carrito está vacío</p>
             </div>
-            <div class="border-t border-gray-200 pt-4 mt-4">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-lg font-bold">Total:</span>
-                    <span id="cart-total" class="text-2xl font-bold text-pink-500">$0</span>
+            <div class="border-t border-dm-cream pt-5 mt-4">
+                <div class="flex justify-between items-center mb-5">
+                    <span class="font-body text-sm font-medium text-dm-brown/60 uppercase tracking-wide">Total</span>
+                    <span id="cart-total" class="font-display text-2xl font-bold text-dm-brown">$0</span>
                 </div>
-                <button onclick="openPaymentModal()" class="w-full bg-turquoise-600 text-white py-3 rounded-lg hover:bg-turquoise-500 transition-colors font-semibold">
+                <button id="cart-pay-btn" class="w-full bg-dm-brown text-white py-3.5 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 font-body font-semibold shadow-sm hover:shadow-md">
                     Proceder al pago
                 </button>
             </div>
@@ -309,67 +314,62 @@
 
     <!-- Payment Modal -->
     <div id="payment-modal" class="fixed inset-0 z-[60] hidden">
-        <div class="absolute inset-0 bg-black/50" onclick="closePaymentModal()"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div id="payment-modal-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl border border-dm-cream w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <!-- Step 1: Customer data + bank info -->
             <div id="payment-step-1">
-                <div class="p-6 border-b border-gray-100">
-                    <h3 class="text-xl font-bold text-turquoise-600">Confirmar Pedido</h3>
+                <div class="p-6 border-b border-dm-cream">
+                    <h3 class="font-display text-xl font-bold text-dm-brown">Confirmar Pedido</h3>
                 </div>
                 <div class="p-6 space-y-4">
                     <!-- Order summary -->
-                    <div class="bg-gray-50 rounded-lg p-4">
-                        <h4 class="font-semibold text-gray-700 mb-2">Resumen del pedido</h4>
+                    <div class="bg-dm-cream/50 rounded-xl p-4">
+                        <h4 class="font-body font-semibold text-dm-brown mb-2">Resumen del pedido</h4>
                         <div id="payment-order-summary"></div>
-                        <div class="border-t border-gray-200 mt-2 pt-2 flex justify-between font-bold">
-                            <span>Total</span>
-                            <span id="payment-total" class="text-pink-500"></span>
+                        <div class="border-t border-dm-cream mt-3 pt-3 flex justify-between font-bold font-body">
+                            <span class="text-dm-brown">Total</span>
+                            <span id="payment-total" class="text-dm-pink"></span>
                         </div>
                     </div>
                     <!-- Customer info -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Nombre completo *</label>
-                        <input id="customer-name" type="text" placeholder="Tu nombre" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Nombre completo *</label>
+                        <input id="customer-name" type="text" placeholder="Tu nombre" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                        <input id="customer-phone" type="tel" placeholder="+56 9 XXXX XXXX" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Teléfono *</label>
+                        <input id="customer-phone" type="tel" placeholder="+56 9 XXXX XXXX" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Dirección de entrega</label>
-                        <input id="customer-address" type="text" placeholder="Calle, número, comuna" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-turquoise-500">
+                        <label class="block text-sm font-medium text-dm-brown mb-1 font-body">Dirección de entrega</label>
+                        <input id="customer-address" type="text" placeholder="Calle, número, comuna" class="w-full border border-dm-cream rounded-xl px-4 py-2.5 font-body text-sm text-dm-brown placeholder-dm-brown/30 focus:outline-none focus:ring-2 focus:ring-dm-mint bg-white transition-all duration-200">
                     </div>
-                    <!-- Bank info -->
-                    <div class="bg-turquoise-100 rounded-lg p-4 text-sm">
-                        <h4 class="font-bold text-turquoise-700 mb-2">💳 Datos para transferencia</h4>
-                        <p><strong>Banco:</strong> BancoEstado</p>
-                        <p><strong>Tipo:</strong> Cuenta RUT</p>
-                        <p><strong>RUT:</strong> XX.XXX.XXX-X</p>
-                        <p><strong>Nombre:</strong> María Dulce Repostería</p>
-                        <p class="mt-2 text-turquoise-600 font-medium">📱 Envía el comprobante por WhatsApp al +56 9 3242 3459</p>
+                    <div class="bg-dm-sky/40 rounded-xl p-4 text-sm font-body text-dm-brown">
+                        <h4 class="font-bold text-dm-brown mb-2 flex items-center gap-2">
+                            <span>�</span> Coordinación del pedido
+                        </h4>
+                        <p>Te contactaremos por WhatsApp para coordinar el pago y la entrega de tu pedido.</p>
                     </div>
-                    <div id="payment-error" class="hidden text-red-600 text-sm bg-red-50 rounded-lg p-3"></div>
+                    <div id="payment-error" class="hidden text-red-600 text-sm bg-red-50 rounded-xl p-3 font-body"></div>
                     <div class="flex gap-3">
-                        <button onclick="closePaymentModal()" class="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-50 transition-colors">Cancelar</button>
-                        <button onclick="confirmOrder()" id="confirm-btn" class="flex-1 bg-turquoise-600 text-white py-3 rounded-lg hover:bg-turquoise-500 transition-colors font-semibold">
+                        <button id="payment-modal-cancel" class="flex-1 border border-dm-cream text-dm-brown py-3 rounded-xl hover:bg-dm-cream transition-all duration-300 font-body font-medium">Cancelar</button>
+                        <button id="payment-modal-confirm" class="flex-1 bg-dm-brown text-white py-3 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 font-body font-semibold">
                             Confirmar pedido
                         </button>
                     </div>
                 </div>
             </div>
-            <!-- Step 2: Success -->
             <div id="payment-step-2" class="hidden p-8 text-center">
-                <div class="text-6xl mb-4">🎉</div>
-                <h3 class="text-2xl font-bold text-turquoise-600 mb-2">¡Pedido recibido!</h3>
-                <p class="text-gray-600 mb-2">Tu pedido N° <strong id="order-number-display"></strong> fue registrado con estado <strong>Pendiente de pago</strong>.</p>
-                <p class="text-gray-600 mb-6">Envíanos el comprobante de transferencia por WhatsApp para confirmar tu pedido.</p>
+                <div class="text-5xl mb-4">🎂</div>
+                <h3 class="font-display text-2xl font-bold text-dm-brown mb-2">¡Pedido recibido!</h3>
+                <p class="font-body text-dm-brown/70 mb-2">Tu pedido N° <strong id="order-number-display" class="text-dm-brown"></strong> fue registrado con éxito.</p>
+                <p class="font-body text-dm-brown/70 mb-6">Te contactaremos por WhatsApp para coordinar el pago y la entrega.</p>
                 <a id="whatsapp-confirm-link" href="#" target="_blank"
-                   class="inline-flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-full hover:bg-green-400 transition-colors font-semibold mb-4">
+                   class="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-xl hover:bg-[#128C7E] transition-all duration-300 font-body font-semibold mb-4 shadow-sm hover:shadow-md">
                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    Enviar comprobante por WhatsApp
-                </a>
-                <br>
-                <button onclick="closePaymentModal()" class="text-gray-500 hover:text-gray-700 text-sm underline">Cerrar</button>
+                    Confirmar por WhatsApp
+                </a><br>
+                <button id="payment-modal-close" class="font-body text-dm-brown/50 hover:text-dm-brown text-sm underline transition-colors duration-200">Cerrar</button>
             </div>
         </div>
     </div>
@@ -377,40 +377,46 @@
     <!-- WhatsApp FAB -->
     <a href="https://wa.me/56932423459?text=Hola!%20Me%20gustar%C3%ADa%20hacer%20un%20pedido%20en%20Dulce%20Mar%C3%ADa%20Repostería%20%F0%9F%8D%B0"
        target="_blank"
-       class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-green-500 rounded-full shadow-lg flex items-center justify-center hover:bg-green-400 transition-colors hover:scale-110 transform duration-200"
+       class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#25D366] rounded-full shadow-lg shadow-[#25D366]/30 flex items-center justify-center hover:bg-[#128C7E] transition-all duration-300 hover:scale-110 hover:shadow-xl"
        title="Contáctanos por WhatsApp">
-        <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+        <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
         </svg>
     </a>
 
     <!-- Footer -->
-    <footer id="contacto" class="bg-pastel-blue text-gray-700 py-12">
+    <footer id="contacto" class="bg-dm-brown text-white py-16">
         <div class="max-w-7xl mx-auto px-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
                 <div>
-                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-24 mb-4">
-                    <p class="text-lg">Hacemos tus sueños dulces realidad</p>
+                    <img src="public/assets/logo.png" alt="Dulce María Repostería" class="h-20 mb-5 brightness-0 invert max-w-full w-auto">
+                    <p class="font-body text-dm-cream/80 text-sm leading-relaxed">Hacemos tus sueños dulces realidad, con ingredientes de calidad y mucho amor.</p>
                 </div>
                 <div>
-                    <h3 class="text-xl font-bold mb-4 text-turquoise-600">Contacto</h3>
-                    <ul class="space-y-2">
-                        <li>📞 +56 9 3242 3459</li>
-                        <li>📧 <a href="https://wa.me/56932423459" class="hover:text-turquoise-600">WhatsApp</a></li>
-                        <li>📍 Santiago, Chile</li>
+                    <h3 class="font-display text-lg font-bold mb-5 text-dm-pink">Contacto</h3>
+                    <ul class="space-y-3 font-body text-sm text-dm-cream/80">
+                        <li class="flex items-center gap-2">
+                            <span class="text-dm-pink">📞</span> +56 9 3242 3459
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-dm-pink">�</span> <a href="https://wa.me/56932423459" class="hover:text-dm-pink transition-colors duration-200">WhatsApp</a>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-dm-pink">📍</span> Santiago, Chile
+                        </li>
                     </ul>
                 </div>
                 <div>
-                    <h3 class="text-xl font-bold mb-4 text-turquoise-600">Horario</h3>
-                    <ul class="space-y-2">
+                    <h3 class="font-display text-lg font-bold mb-5 text-dm-pink">Horario</h3>
+                    <ul class="space-y-3 font-body text-sm text-dm-cream/80">
                         <li>Lunes a Viernes: 9:00 - 20:00</li>
                         <li>Sábados: 10:00 - 18:00</li>
                         <li>Domingos: 10:00 - 15:00</li>
                     </ul>
                 </div>
             </div>
-            <div class="mt-8 text-center border-t border-pastel-blue-dark pt-8">
-                <p>&copy; 2025 Dulce María Repostería. Todos los derechos reservados.</p>
+            <div class="mt-12 text-center border-t border-white/10 pt-8">
+                <p class="font-body text-dm-cream/50 text-xs tracking-wide">&copy; 2025 Dulce María Repostería. Todos los derechos reservados.</p>
             </div>
         </div>
     </footer>

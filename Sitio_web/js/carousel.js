@@ -32,8 +32,8 @@ function showSlide(index) {
     // Actualizar los dots
     if (dots && dots.length > 0) {
         dots.forEach((dot, idx) => {
-            dot.classList.toggle('bg-pink-500', idx === currentSlide);
-            dot.classList.toggle('bg-gray-300', idx !== currentSlide);
+            dot.classList.toggle('bg-dm-pink', idx === currentSlide);
+            dot.classList.toggle('bg-white/50', idx !== currentSlide);
         });
     }
 }
@@ -75,6 +75,16 @@ function initCarousel() {
     if (carousel) {
         carousel.addEventListener('mouseenter', stopAutoplay);
         carousel.addEventListener('mouseleave', startAutoplay);
+
+        // CSP-safe event delegation for static/dynamic carousel controls
+        carousel.addEventListener('click', (e) => {
+            const prevBtn = e.target.closest('#hero-prev') || e.target.closest('[data-action="prev"]');
+            const nextBtn = e.target.closest('#hero-next') || e.target.closest('[data-action="next"]');
+            const dotBtn = e.target.closest('[data-slide]');
+            if (prevBtn) prevSlide();
+            if (nextBtn) nextSlide();
+            if (dotBtn) showSlide(parseInt(dotBtn.dataset.slide, 10));
+        });
     }
 }
 

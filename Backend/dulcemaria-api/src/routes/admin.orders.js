@@ -390,4 +390,44 @@ router.patch("/:id/payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), valida
   }
 });
 
+/**
+ * GET /admin/orders/pending-notifications
+ * Returns pending orders created in last 24h for real-time admin notification
+ */
+router.get("/pending-notifications", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT o.id, o.order_no, o.status, o.payment_status, o.total_clp, o.created_at,
+        c.full_name AS customer_name, c.phone AS customer_phone
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE o.status = 'PENDING_PAYMENT'
+         AND o.created_at >= NOW() - INTERVAL '24 hours'
+       ORDER BY o.created_at DESC
+       LIMIT 50`
+    );
+
+    // Also check cake_orders
+    const cakeR = await pool.query(
+      `SELECT co.id, co.order_number, co.status, co.total_price_clp, co.created_at,
+        co.customer_name, co.customer_phone
+       FROM cake_orders co
+       WHERE co.status = 'PENDING'
+         AND co.created_at >= NOW() - INTERVAL '24 hours'
+       ORDER BY co.created_at DESC
+       LIMIT 50`
+    );
+
+    return res.json({
+      ok: true,
+      orders: r.rows,
+      cake_orders: cakeR.rows,
+      total: r.rowCount + cakeR.rowCount
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
 module.exports = router;
