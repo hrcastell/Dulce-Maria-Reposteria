@@ -52,24 +52,45 @@ function updateCartUI() {
         cartItemsEl.innerHTML = '<p class="font-body text-dm-brown/40 text-center mt-12 text-sm">Tu carrito está vacío</p>';
     } else {
         cartItemsEl.innerHTML = cartItems.map(item => `
-        <div class="flex items-center gap-3 py-3 border-b border-dm-cream/60">
+        <div class="flex items-center gap-3 py-3 border-b border-dm-cream/60" data-cart-key="${item.key}">
           ${item.image
-            ? `<img src="${item.image}" class="w-14 h-14 object-cover rounded-xl flex-shrink-0 shadow-sm" onerror="this.style.display='none'">`
+            ? `<img src="${item.image}" data-cart-img class="w-14 h-14 object-cover rounded-xl flex-shrink-0 shadow-sm">`
             : `<div class="w-14 h-14 bg-dm-pink/10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl">🍰</div>`}
           <div class="flex-1 min-w-0">
             <p class="font-body text-sm font-medium text-dm-brown truncate">${item.name}</p>
             <p class="font-body text-sm text-dm-pink font-semibold">$${formatPrice(item.price)}</p>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <button onclick="changeQty('${item.key}', -1)" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs">−</button>
+            <button data-qty-delta="${item.key}:-1" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs" ${item.qty <= 1 ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>−</button>
             <span class="w-6 text-center font-body text-sm font-medium text-dm-brown">${item.qty}</span>
-            <button onclick="changeQty('${item.key}', 1)" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs" ${item.qty >= item.stock ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>+</button>
-            <button onclick="removeItem('${item.key}')" class="ml-1 text-red-400 hover:text-red-600 text-lg leading-none transition-colors duration-200">×</button>
+            <button data-qty-delta="${item.key}:1" class="w-7 h-7 bg-dm-cream rounded-full text-dm-brown hover:bg-dm-pink hover:text-white transition-colors duration-200 flex items-center justify-center font-bold text-xs" ${item.qty >= item.stock ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>+</button>
+            <button data-remove-item="${item.key}" class="ml-1 text-red-400 hover:text-red-600 text-lg leading-none transition-colors duration-200">×</button>
           </div>
         </div>`).join('');
+      cartItemsEl.querySelectorAll('img[data-cart-img]').forEach(img => {
+        img.addEventListener('error', function () { this.style.display = 'none'; });
+      });
     }
   }
 }
+
+// Cart event delegation (CSP-safe)
+document.addEventListener('DOMContentLoaded', () => {
+  const sidebar = document.getElementById('cart-sidebar');
+  if (!sidebar) return;
+  sidebar.addEventListener('click', (e) => {
+    const qtyBtn = e.target.closest('[data-qty-delta]');
+    if (qtyBtn) {
+      const [key, delta] = qtyBtn.dataset.qtyDelta.split(':');
+      changeQty(key, parseInt(delta, 10));
+      return;
+    }
+    const removeBtn = e.target.closest('[data-remove-item]');
+    if (removeBtn) {
+      removeItem(removeBtn.dataset.removeItem);
+    }
+  });
+});
 
 function changeQty(key, delta) {
   const item = cartItems.find(i => i.key === key);
@@ -95,6 +116,29 @@ function toggleCart() {
   const sidebar = document.getElementById('cart-sidebar');
   if (sidebar) sidebar.classList.toggle('translate-x-full');
 }
+
+// Wire up cart buttons robustly (CSP-safe, avoids inline onclick)
+document.addEventListener('DOMContentLoaded', () => {
+  const openBtn = document.getElementById('cart-toggle-btn');
+  const closeBtn = document.getElementById('cart-close-btn');
+  if (openBtn) openBtn.addEventListener('click', toggleCart);
+  if (closeBtn) closeBtn.addEventListener('click', toggleCart);
+
+  // Payment modal open button inside cart sidebar
+  const payBtn = document.getElementById('cart-pay-btn');
+  if (payBtn) payBtn.addEventListener('click', openPaymentModal);
+
+  // Payment modal buttons (CSP-safe)
+  const payBackdrop = document.getElementById('payment-modal-backdrop');
+  const payCancel = document.getElementById('payment-modal-cancel');
+  const payConfirm = document.getElementById('payment-modal-confirm');
+  if (payBackdrop) payBackdrop.addEventListener('click', closePaymentModal);
+  if (payCancel) payCancel.addEventListener('click', closePaymentModal);
+  if (payConfirm) payConfirm.addEventListener('click', confirmOrder);
+
+  const payClose = document.getElementById('payment-modal-close');
+  if (payClose) payClose.addEventListener('click', closePaymentModal);
+});
 
 // Helper para formatear precio (duplicado pero útil tenerlo aquí si catalog.js falla)
 function formatPrice(n) {
@@ -144,7 +188,7 @@ async function confirmOrder() {
     return;
   }
 
-  const btn = document.getElementById('confirm-btn');
+  const btn = document.getElementById('payment-modal-confirm');
   btn.disabled = true;
   btn.textContent = 'Registrando pedido...';
   errEl.classList.add('hidden');
@@ -177,7 +221,7 @@ async function confirmOrder() {
 
     const total = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
     const summary = cartItems.map(i => `${i.name} x${i.qty}`).join(', ');
-    const msg = encodeURIComponent(`Hola! Adjunto comprobante de pago para el pedido #${orderNum} — ${summary} — Total: $${formatPrice(total)}`);
+    const msg = encodeURIComponent(`Hola! Hice un pedido #${orderNum} — ${summary} — Total: $${formatPrice(total)}. Me contacto para confirmar.`);
     document.getElementById('whatsapp-confirm-link').href = `https://wa.me/56932423459?text=${msg}`;
 
     document.getElementById('payment-step-1').classList.add('hidden');

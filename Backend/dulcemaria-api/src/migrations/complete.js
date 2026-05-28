@@ -281,11 +281,14 @@ async function runCompleteMigrations() {
       extra_price_clp INT NOT NULL DEFAULT 0,
       is_default BOOLEAN NOT NULL DEFAULT false,
       diameter_cm INT,
+      image_url TEXT,
       is_active BOOLEAN NOT NULL DEFAULT true,
       sort_order INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cake_config_option_category ON cake_config_option(category_id);`,
+    `ALTER TABLE cake_config_option ADD COLUMN IF NOT EXISTS image_url TEXT;`,
+    `ALTER TABLE cake_orders ADD COLUMN IF NOT EXISTS theme_option_id UUID REFERENCES cake_config_option(id);`,
     `CREATE TABLE IF NOT EXISTS cake_orders (
       id UUID PRIMARY KEY,
       order_number VARCHAR(30) UNIQUE NOT NULL,
@@ -298,6 +301,7 @@ async function runCompleteMigrations() {
       sponge_option_id UUID REFERENCES cake_config_option(id),
       filling_option_id UUID REFERENCES cake_config_option(id),
       decoration_option_id UUID REFERENCES cake_config_option(id),
+      theme_option_id UUID REFERENCES cake_config_option(id),
       base_price_clp INT NOT NULL DEFAULT 0,
       extras_price_clp INT NOT NULL DEFAULT 0,
       total_price_clp INT NOT NULL DEFAULT 0,
@@ -311,6 +315,7 @@ async function runCompleteMigrations() {
     // Seed categorías iniciales del cake builder (idempotente)
     `INSERT INTO cake_config_category (id, type, label, sort_order, is_active)
      VALUES
+       ('00000000-0000-0000-0001-000000000000', 'THEME',      'Diseño/Temática', 0, true),
        ('00000000-0000-0000-0001-000000000001', 'SIZE',       'Tamaño',      1, true),
        ('00000000-0000-0000-0001-000000000002', 'LAYERS',     'Capas',       2, true),
        ('00000000-0000-0000-0001-000000000003', 'SPONGE',     'Bizcocho',    3, true),

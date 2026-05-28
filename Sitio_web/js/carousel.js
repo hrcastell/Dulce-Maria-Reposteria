@@ -75,6 +75,16 @@ function initCarousel() {
     if (carousel) {
         carousel.addEventListener('mouseenter', stopAutoplay);
         carousel.addEventListener('mouseleave', startAutoplay);
+
+        // CSP-safe event delegation for static/dynamic carousel controls
+        carousel.addEventListener('click', (e) => {
+            const prevBtn = e.target.closest('#hero-prev') || e.target.closest('[data-action="prev"]');
+            const nextBtn = e.target.closest('#hero-next') || e.target.closest('[data-action="next"]');
+            const dotBtn = e.target.closest('[data-slide]');
+            if (prevBtn) prevSlide();
+            if (nextBtn) nextSlide();
+            if (dotBtn) showSlide(parseInt(dotBtn.dataset.slide, 10));
+        });
     }
 }
 

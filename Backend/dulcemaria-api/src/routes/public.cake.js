@@ -16,7 +16,7 @@ router.get(["", "/"], async (req, res) => {
       `SELECT id, type, label, sort_order FROM cake_config_category WHERE is_active=true ORDER BY sort_order ASC`
     );
     const opts = await pool.query(
-      `SELECT id, category_id, label, description, extra_price_clp, is_default, diameter_cm, sort_order
+      `SELECT id, category_id, label, description, extra_price_clp, is_default, diameter_cm, image_url, sort_order
        FROM cake_config_option
        WHERE is_active=true
        ORDER BY category_id, sort_order ASC`
@@ -53,6 +53,7 @@ router.post("/orders", async (req, res) => {
     sponge_option_id: z.string().uuid().optional().nullable(),
     filling_option_id: z.string().uuid().optional().nullable(),
     decoration_option_id: z.string().uuid().optional().nullable(),
+    theme_option_id: z.string().uuid().optional().nullable(),
     base_price_clp: z.number().int().nonnegative(),
     extras_price_clp: z.number().int().nonnegative(),
     total_price_clp: z.number().int().nonnegative(),
@@ -71,14 +72,14 @@ router.post("/orders", async (req, res) => {
     const r = await pool.query(
       `INSERT INTO cake_orders
          (id, order_number, customer_name, customer_phone, customer_email, customer_address,
-          size_option_id, layers_option_id, sponge_option_id, filling_option_id, decoration_option_id,
+          size_option_id, layers_option_id, sponge_option_id, filling_option_id, decoration_option_id, theme_option_id,
           base_price_clp, extras_price_clp, total_price_clp, deposit_clp, notes, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PENDING_PAYMENT')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'PENDING_PAYMENT')
        RETURNING id, order_number, total_price_clp, deposit_clp`,
       [
         crypto.randomUUID(), orderNumber, d.customer_name, d.customer_phone, d.customer_email ?? null, d.customer_address ?? null,
         d.size_option_id ?? null, d.layers_option_id ?? null, d.sponge_option_id ?? null,
-        d.filling_option_id ?? null, d.decoration_option_id ?? null,
+        d.filling_option_id ?? null, d.decoration_option_id ?? null, d.theme_option_id ?? null,
         d.base_price_clp, d.extras_price_clp, d.total_price_clp, deposit, d.notes ?? null
       ]
     );

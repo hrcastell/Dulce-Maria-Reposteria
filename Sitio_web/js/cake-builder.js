@@ -87,16 +87,53 @@ function renderCurrentStep() {
   const selected = cakeSelections[cat.type];
 
   const container = document.getElementById('cake-steps-container');
-  container.innerHTML = `
-    <div class="p-6 sm:p-8">
-      <h3 class="font-display text-2xl font-bold text-dm-brown mb-1">${cat.label}</h3>
-      <p class="font-body text-dm-brown/40 text-sm mb-6">Elige una opción para continuar</p>
+
+  let optionsHtml = '';
+
+  if (cat.type === 'THEME') {
+    // THEME step: image grid/carousel
+    optionsHtml = `
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        ${cat.options.map(opt => {
+          const isSel = selected?.id === opt.id;
+          const imgUrl = opt.image_url ? (opt.image_url.startsWith('http') ? opt.image_url : `${API_BASE}${opt.image_url}`) : null;
+          return `
+            <button
+              data-cake-opt="${cat.type}:${opt.id}:${encodeURIComponent(opt.label)}:${opt.extra_price_clp || 0}:${cat.id}"
+              class="group relative overflow-hidden rounded-xl border-2 transition-all duration-200 ${isSel
+                ? 'border-dm-pink ring-2 ring-dm-pink/30 shadow-md'
+                : 'border-dm-cream hover:border-dm-mint'}"
+            >
+              <div class="aspect-[3/4] w-full overflow-hidden bg-dm-cream/50">
+                ${imgUrl
+                  ? `<img src="${imgUrl}" alt="${opt.label}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-3xl\\'>🍰</div>'">`
+                  : `<div class="w-full h-full flex items-center justify-center text-3xl">🍰</div>`
+                }
+              </div>
+              <div class="p-3 text-left">
+                <div class="flex justify-between items-start">
+                  <span class="font-semibold text-dm-brown text-sm">${opt.label}</span>
+                  ${isSel ? '<span class="text-dm-pink text-lg">✓</span>' : ''}
+                </div>
+                ${opt.extra_price_clp > 0
+                  ? `<span class="text-xs font-medium text-dm-brown mt-1 block">+$${fmtPrice(opt.extra_price_clp)}</span>`
+                  : `<span class="text-xs text-dm-brown/40 mt-1 block">Incluido</span>`
+                }
+              </div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } else {
+    // Standard step: text buttons
+    optionsHtml = `
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         ${cat.options.map(opt => {
           const isSel = selected?.id === opt.id;
           return `
             <button
-              onclick="selectCakeOption('${cat.type}', '${opt.id}', '${opt.label.replace(/'/g, "\\'")}', ${opt.extra_price_clp || 0}, '${cat.id}')"
+              data-cake-opt="${cat.type}:${opt.id}:${encodeURIComponent(opt.label)}:${opt.extra_price_clp || 0}:${cat.id}"
               class="text-left p-4 rounded-xl border-2 transition-all duration-200 font-body ${isSel
                 ? 'border-dm-pink bg-dm-pink/10 shadow-sm'
                 : 'border-dm-cream hover:border-dm-mint hover:bg-dm-mint/10'}"
@@ -113,6 +150,14 @@ function renderCurrentStep() {
           `;
         }).join('')}
       </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="p-6 sm:p-8">
+      <h3 class="font-display text-2xl font-bold text-dm-brown mb-1">${cat.label}</h3>
+      <p class="font-body text-dm-brown/40 text-sm mb-6">Elige una opción para continuar</p>
+      ${optionsHtml}
     </div>
   `;
 
@@ -215,6 +260,7 @@ async function submitCakeOrder() {
     const sel = cakeSelections[cat.type];
     if (sel?.id) {
       const keyMap = {
+        THEME: 'theme_option_id',
         SIZE: 'size_option_id',
         LAYERS: 'layers_option_id',
         SPONGE: 'sponge_option_id',
@@ -239,7 +285,7 @@ async function submitCakeOrder() {
     document.getElementById('cake-order-number-display').textContent = orderNum;
 
     const configText = cakeCategories.map(c => `${c.label}: ${cakeSelections[c.type]?.label || '—'}`).join(', ');
-    const msg = encodeURIComponent(`Hola! Quiero enviar el comprobante del abono para mi pedido de torta ${orderNum} — ${configText} — Abono: $${fmtPrice(deposit)}`);
+    const msg = encodeURIComponent(`Hola! Hice un pedido de torta ${orderNum} — ${configText} — Total: $${fmtPrice(total)}. Me contacto para confirmar.`);
     document.getElementById('cake-whatsapp-link').href = `https://wa.me/56932423459?text=${msg}`;
 
     document.getElementById('cake-modal-step-1').classList.add('hidden');
@@ -253,5 +299,35 @@ async function submitCakeOrder() {
   }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', loadCakeBuilder);
+// ─── Event Listeners (CSP-safe, no inline onclick) ───────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadCakeBuilder();
+
+  // Cake builder nav
+  const prevBtn = document.getElementById('cake-prev-btn');
+  const nextBtn = document.getElementById('cake-next-btn');
+  if (prevBtn) prevBtn.addEventListener('click', cakePrev);
+  if (nextBtn) nextBtn.addEventListener('click', cakeNext);
+
+  // Cake step options via event delegation
+  const stepsContainer = document.getElementById('cake-steps-container');
+  if (stepsContainer) {
+    stepsContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-cake-opt]');
+      if (!btn) return;
+      const [type, id, encLabel, extraPrice, categoryId] = btn.dataset.cakeOpt.split(':');
+      const label = decodeURIComponent(encLabel);
+      selectCakeOption(type, id, label, parseInt(extraPrice, 10) || 0, categoryId);
+    });
+  }
+
+  // Cake modal buttons
+  const cakeBackdrop = document.getElementById('cake-modal-backdrop');
+  const cakeCancel = document.getElementById('cake-modal-cancel');
+  const cakeClose = document.getElementById('cake-modal-close');
+  const cakeConfirm = document.getElementById('cake-confirm-btn');
+  if (cakeBackdrop) cakeBackdrop.addEventListener('click', closeCakeModal);
+  if (cakeCancel) cakeCancel.addEventListener('click', closeCakeModal);
+  if (cakeClose) cakeClose.addEventListener('click', closeCakeModal);
+  if (cakeConfirm) cakeConfirm.addEventListener('click', submitCakeOrder);
+});

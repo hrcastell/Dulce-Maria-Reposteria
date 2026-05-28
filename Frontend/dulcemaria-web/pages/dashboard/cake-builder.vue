@@ -83,8 +83,13 @@
                 </tr>
                 <tr v-for="opt in cat.options" :key="opt.id" class="border-b border-warm-50 hover:bg-warm-50/50 transition-colors">
                   <td class="py-3 pr-4">
-                    <div class="font-medium text-warm-800">{{ opt.label }}</div>
-                    <div v-if="opt.description" class="text-xs text-warm-400">{{ opt.description }}</div>
+                    <div class="flex items-center gap-3">
+                      <img v-if="opt.image_url" :src="getAbsoluteUrl(opt.image_url)" class="w-10 h-10 rounded-lg object-cover border border-warm-200" :alt="opt.label">
+                      <div>
+                        <div class="font-medium text-warm-800">{{ opt.label }}</div>
+                        <div v-if="opt.description" class="text-xs text-warm-400">{{ opt.description }}</div>
+                      </div>
+                    </div>
                   </td>
                   <td class="py-3 pr-4">
                     <span :class="opt.extra_price_clp > 0 ? 'text-primary-600 font-semibold' : 'text-warm-400'">
@@ -127,6 +132,7 @@
             >
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
+                  <img v-if="opt.image_url" :src="getAbsoluteUrl(opt.image_url)" class="w-10 h-10 rounded-lg object-cover border border-warm-200 flex-shrink-0" :alt="opt.label">
                   <span class="font-medium text-warm-800">{{ opt.label }}</span>
                   <span v-if="opt.is_default" class="text-xs bg-success-100 text-success-700 px-2 py-0.5 rounded-full">Base</span>
                 </div>
@@ -329,6 +335,27 @@
             placeholder="Descripción opcional"
           >
         </div>
+        <div v-if="selectedCategory?.type === 'THEME'" class="space-y-2">
+          <label class="block text-sm font-medium text-warm-700 mb-1.5">Imagen del diseño</label>
+          <div class="flex items-center gap-3">
+            <input 
+              ref="imageInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+              @change="handleImageUpload"
+            >
+            <button 
+              type="button"
+              @click="$refs.imageInput.click()"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-warm-100 hover:bg-warm-200 text-warm-700 text-sm font-medium rounded-xl transition-colors"
+            >
+              <span>📁</span> {{ optionForm.image_url ? 'Cambiar imagen' : 'Seleccionar imagen' }}
+            </button>
+            <img v-if="optionForm.image_url" :src="getAbsoluteUrl(optionForm.image_url)" class="w-12 h-12 rounded-lg object-cover border border-warm-200" alt="Preview">
+          </div>
+          <p class="text-xs text-warm-400">Formatos: JPG, PNG, WEBP (máx 5MB). Se reemplaza la imagen anterior.</p>
+        </div>
         <div class="flex flex-wrap items-center gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
             <input 
@@ -430,7 +457,7 @@ const editingOption = ref<any>(null)
 const selectedCategory = ref<any>(null)
 const optionSaving = ref(false)
 const optionFormError = ref('')
-const optionForm = ref({ label: '', description: '', extra_price_clp: 0, is_default: false, diameter_cm: null as number | null, is_active: true })
+const optionForm = ref({ label: '', description: '', extra_price_clp: 0, is_default: false, diameter_cm: null as number | null, image_url: '' as string | null, is_active: true })
 
 const openOptionModal = (cat: any, opt?: any) => {
   selectedCategory.value = cat
@@ -442,9 +469,79 @@ const openOptionModal = (cat: any, opt?: any) => {
     extra_price_clp: opt?.extra_price_clp ?? 0,
     is_default: opt?.is_default ?? false,
     diameter_cm: opt?.diameter_cm ?? null,
+    image_url: opt?.image_url || null,
     is_active: opt?.is_active ?? true,
   }
   showOptionModal.value = true
+}
+
+const config = useRuntimeConfig()
+const getAbsoluteUrl = (url: string) => {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) return url
+  return `${config.public.apiBase}${url}`
+}
+
+const handleImageUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  if (file.size > 5 * 1024 * 1024) {
+    optionFormError.value = 'La imagen es muy grande (máx 5MB)'
+    return
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    optionFormError.value = 'Formato no válido. Use JPG, PNG o WEBP.'
+    return
+  }
+
+  // If editing, upload directly to the option ID
+  const optionId = editingOption.value?.id
+  if (!optionId) {
+    optionFormError.value = 'Guarde la opción primero antes de subir la imagen'
+    return
+  }
+
+  try {
+    optionSaving.value = true
+    const formData = new FormData()
+    formData.append('image', file)
+
+    const res = await api.post<{ ok: boolean; image_url: string }>(`/admin/cake/config/options/${optionId}/image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+
+    if (res.ok && res.image_url) {
+      optionForm.value.image_url = res.image_url
+      const cat = categories.value.find(c => c.id === selectedCategory.value.id)
+      if (cat) {
+        const idx = cat.options.findIndex((o: any) => o.id === optionId)
+        if (idx >= 0) cat.options[idx].image_url = res.image_url
+      }
+    }
+  } catch (e: any) {
+    optionFormError.value = e?.data?.error || 'Error al subir imagen'
+  } finally {
+    optionSaving.value = false
+    target.value = ''
+  }
+}
+
+const removeOptionImage = async () => {
+  const optionId = editingOption.value?.id
+  if (!optionId) return
+  try {
+    await api.delete(`/admin/cake/config/options/${optionId}/image`)
+    optionForm.value.image_url = null
+    const cat = categories.value.find(c => c.id === selectedCategory.value.id)
+    if (cat) {
+      const idx = cat.options.findIndex((o: any) => o.id === optionId)
+      if (idx >= 0) cat.options[idx].image_url = null
+    }
+  } catch (e: any) {
+    alert(e?.data?.error || 'Error al eliminar imagen')
+  }
 }
 
 const saveOption = async () => {

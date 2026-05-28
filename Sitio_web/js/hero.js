@@ -65,24 +65,24 @@ function renderHero(slides) {
     `;
   }).join('');
 
-  // Create indicators HTML
+  // Create indicators HTML (no inline onclick)
   const indicatorsHtml = `
     <div class="carousel-indicators absolute bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-3 z-20">
       ${slides.map((_, index) => `
-        <button onclick="showSlide(${index})" class="carousel-dot h-1.5 w-8 rounded-full bg-white/50 hover:bg-dm-pink transition-all duration-300"></button>
+        <button data-slide="${index}" class="carousel-dot h-1.5 w-8 rounded-full bg-white/50 hover:bg-dm-pink transition-all duration-300"></button>
       `).join('')}
     </div>
   `;
 
-  // Create controls HTML
+  // Create controls HTML (no inline onclick)
   const controlsHtml = `
     <div class="carousel-controls">
-      <button onclick="prevSlide()" class="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
+      <button data-action="prev" class="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
       </button>
-      <button onclick="nextSlide()" class="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
+      <button data-action="next" class="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/30 backdrop-blur-md p-3 rounded-full border border-white/40 hover:bg-white/50 transition-all duration-300 z-20 text-dm-brown shadow-sm hover:scale-105">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
         </svg>
@@ -92,6 +92,17 @@ function renderHero(slides) {
 
   // Inject content
   container.innerHTML = slidesHtml + controlsHtml + indicatorsHtml;
+
+  // Wire up carousel controls via event delegation
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-slide]') || e.target.closest('[data-action]');
+    if (!btn) return;
+    const slide = btn.dataset.slide;
+    if (slide !== undefined) showSlide(parseInt(slide, 10));
+    const action = btn.dataset.action;
+    if (action === 'prev') prevSlide();
+    if (action === 'next') nextSlide();
+  });
 }
 
 // Initialize on load

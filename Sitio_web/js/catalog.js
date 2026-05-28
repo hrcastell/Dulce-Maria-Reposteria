@@ -22,6 +22,14 @@ function getImageUrl(url) {
   return result;
 }
 
+function attachImgFallbacks(container) {
+  container.querySelectorAll('img[data-img-fallback]').forEach(img => {
+    img.addEventListener('error', function () {
+      this.parentElement.innerHTML = '<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>';
+    });
+  });
+}
+
 // ─── Catalog loading ──────────────────────────────────────────────────────────
 async function loadCatalog() {
   try {
@@ -44,6 +52,24 @@ function showCatalogEmpty() {
   document.getElementById('catalog-empty').classList.remove('hidden');
 }
 
+function outOfStockCard(product) {
+  const imgUrl = getImageUrl(product.thumb_url);
+
+  const imgHtml = imgUrl
+    ? `<img src="${imgUrl}" alt="${product.name}" data-img-fallback class="w-full aspect-[4/3] object-cover opacity-80" loading="lazy">`
+    : `<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>`;
+
+  return `
+    <div class="group bg-dm-cream/60 rounded-2xl border border-dm-cream/80 overflow-hidden opacity-80 hover:opacity-100 transition-opacity duration-300" id="card-${product.id}">
+      <div class="overflow-hidden">${imgHtml}</div>
+      <div class="p-4">
+        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${product.name}</h3>
+        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs line-clamp-2 leading-relaxed">${product.description}</p>` : ''}
+        <span class="inline-flex items-center mt-3 text-[10px] font-body font-semibold uppercase tracking-wider text-dm-brown/40">Próximamente</span>
+      </div>
+    </div>`;
+}
+
 function renderCatalog(products) {
   document.getElementById('catalog-loading').classList.add('hidden');
 
@@ -52,9 +78,39 @@ function renderCatalog(products) {
     return;
   }
 
+  // Split into in-stock and out-of-stock
+  const inStock = [];
+  const outOfStock = [];
+  for (const p of products) {
+    const hasVariants = p.variants && p.variants.length > 0;
+    const totalStock = hasVariants
+      ? p.variants.reduce((s, v) => s + (v.stock_qty || 0), 0)
+      : (p.stock_qty || 0);
+    if (totalStock === 0) {
+      outOfStock.push(p);
+    } else {
+      inStock.push(p);
+    }
+  }
+
   const grid = document.getElementById('catalog-grid');
+  const outGrid = document.getElementById('catalog-outofstock-grid');
+  const outTitle = document.getElementById('catalog-outofstock-title');
+
   grid.classList.remove('hidden');
-  grid.innerHTML = products.map(product => productCard(product)).join('');
+  grid.innerHTML = inStock.map(product => productCard(product)).join('');
+  attachImgFallbacks(grid);
+
+  if (outOfStock.length > 0 && outGrid && outTitle) {
+    outTitle.classList.remove('hidden');
+    outGrid.classList.remove('hidden');
+    outGrid.innerHTML = outOfStock.map(product => outOfStockCard(product)).join('');
+    attachImgFallbacks(outGrid);
+  } else if (outGrid && outTitle) {
+    outTitle.classList.add('hidden');
+    outGrid.classList.add('hidden');
+    outGrid.innerHTML = '';
+  }
 }
 
 function productCard(product) {
@@ -66,11 +122,11 @@ function productCard(product) {
   const outOfStock = totalStock === 0;
 
   const imgHtml = imgUrl
-    ? `<img src="${imgUrl}" alt="${product.name}" class="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500 ease-out" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl\\'>🍰</div>'">`
+    ? `<img src="${imgUrl}" alt="${product.name}" data-img-fallback class="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500 ease-out" loading="lazy">`
     : `<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>`;
 
   const variantSelect = hasVariants ? `
-    <select id="variant-${product.id}" onchange="onVariantChange('${product.id}')"
+    <select id="variant-${product.id}" data-variant-for="${product.id}"
       class="w-full border border-dm-cream rounded-xl px-3 py-2 text-sm mb-3 font-body text-dm-brown bg-white focus:outline-none focus:ring-2 focus:ring-dm-mint transition-all duration-200">
       ${product.variants.filter(v => v.is_active !== false).map(v =>
         `<option value="${v.id}" data-price="${v.price_clp ?? product.price_clp}" data-stock="${v.stock_qty}">${v.name}${v.price_clp && v.price_clp !== product.price_clp ? ' — $' + formatPrice(v.price_clp) : ''}</option>`
@@ -79,7 +135,7 @@ function productCard(product) {
 
   const addBtn = outOfStock
     ? `<button disabled class="w-full bg-dm-cream text-dm-brown/40 px-4 py-2.5 rounded-xl text-sm font-body font-medium cursor-not-allowed">Sin stock</button>`
-    : `<button onclick="addToCartFromCard('${product.id}')"
+    : `<button data-add-to-cart="${product.id}"
          id="add-btn-${product.id}"
          class="w-full bg-dm-brown text-white px-4 py-2.5 rounded-xl hover:bg-dm-pink hover:text-dm-brown transition-all duration-300 text-sm font-body font-semibold shadow-sm hover:shadow-md">
          Agregar al carrito
@@ -167,5 +223,22 @@ function addToCartFromCard(productId) {
   }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', loadCatalog);
+// ─── Event Delegation ───────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadCatalog();
+
+  // Delegate variant change events
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-variant-for]');
+    if (sel) onVariantChange(sel.dataset.variantFor);
+  });
+
+  // Delegate add-to-cart clicks
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-add-to-cart]');
+    if (btn) {
+      e.preventDefault();
+      addToCartFromCard(btn.dataset.addToCart);
+    }
+  });
+});
