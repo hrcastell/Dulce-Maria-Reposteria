@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
+    "dev": "nodemon server.js",
     "db:validate": "node scripts/validate-schema.js",
     "db:init": "node scripts/init-db.js",
     "seed:superadmin": "node scripts/seed-superadmin.js"
@@ -22,5 +23,8 @@
       "pg": "^8.11.5",
       "zod": "^3.23.8",
       "bcryptjs": "^2.4.3"
+    },
+    "devDependencies": {
+      "nodemon": "^3.1.0"
     }
 }

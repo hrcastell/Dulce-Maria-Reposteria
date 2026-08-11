@@ -1,0 +1,9 @@
+# Root-level env file for the local-only Docker Compose dev stack
+# (docker-compose.yml / docker/README.md). Never commit this — copy it from
+# docker/env.example instead. Production (cPanel + phpPgAdmin) does not use
+# this file at all.
+.env
+
+# Local tool caches/indexes (per-checkout, never shared)
+.codegraph/
+.atl/

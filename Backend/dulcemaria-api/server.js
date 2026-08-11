@@ -31,12 +31,20 @@ const app = express();
 app.set("trust proxy", 1);
 
 // CORS restrictivo
+// FRONTEND_URL admite una lista separada por comas para soportar múltiples
+// orígenes locales (admin Nuxt + Sitio_web Vite) sin romper el caso de un
+// único valor (comportamiento original, usado en producción/cPanel).
+const extraOrigins = (process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173", // Vite dev
   "https://dulcemaria.hrcastell.com",
   "https://admin.dulcemaria.hrcastell.com",
-  process.env.FRONTEND_URL,
+  ...extraOrigins,
 ].filter(Boolean);
 
 app.use(cors({

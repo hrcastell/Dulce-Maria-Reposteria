@@ -17,6 +17,15 @@ export default defineNuxtConfig({
     }
   },
 
+  // Docker (dev local únicamente): bind mounts en Windows/WSL no siempre
+  // emiten eventos inotify, así que forzamos polling para que el HMR de
+  // Nuxt/Vite detecte cambios de archivo dentro del contenedor.
+  vite: {
+    server: {
+      watch: { usePolling: true, interval: 300 },
+    },
+  },
+
   app: {
     baseURL: '/',
     head: {

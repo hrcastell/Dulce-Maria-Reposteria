@@ -1,0 +1,109 @@
+# =============================================================================
+# LOCAL DEVELOPMENT ONLY — Dulce María Repostería
+#
+# This Docker Compose stack is a DEVELOPER CONVENIENCE ONLY. It exists so a
+# contributor can run the full app (Postgres + API + admin panel + public
+# site) locally with one command and get hot-reload while editing.
+#
+# It has NOTHING to do with how this project is deployed in production.
+# Production runs on cPanel SHARED HOSTING:
+#   - Backend: Node.js app under cPanel's "Setup Node.js App" (Passenger)
+#   - Database: PostgreSQL administered via phpPgAdmin
+#   - Frontend/Sitio_web: built static/SSR output uploaded to cPanel
+# There are NO containers anywhere in the real deploy path, ever. Do not use
+# this compose file, these Dockerfiles, or any image built from them as a
+# reference for how to deploy this project. See docker/README.md.
+#
+# First-time setup: `cp docker/env.example .env` at the repo root, then
+# `docker compose up -d --build`. See docker/README.md for full details.
+# =============================================================================
+
+services:
+  db:
+    image: postgres:10.23-alpine
+    container_name: dulcemaria-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5434:5432"
+    volumes:
+      - dulcemaria_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./Backend/dulcemaria-api
+      dockerfile: Dockerfile
+    container_name: dulcemaria-backend-dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      # Comma-separated — both local frontend origins are allowed (see
+      # server.js CORS handling). Browser-facing, so these stay on localhost.
+      FRONTEND_URL: http://localhost:4302,http://localhost:4303
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    ports:
+      - "4301:3000"
+    volumes:
+      - ./Backend/dulcemaria-api:/usr/src/app
+      - dulcemaria_backend_node_modules:/usr/src/app/node_modules
+
+  frontend:
+    build:
+      context: ./Frontend/dulcemaria-web
+      dockerfile: Dockerfile
+    container_name: dulcemaria-frontend-dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Resolved by the BROWSER, not by the container network — must stay a
+      # localhost URL pointing at the host-exposed backend port, never the
+      # compose service name `backend`.
+      NUXT_PUBLIC_API_BASE: http://localhost:4301
+    ports:
+      - "4302:3000"
+    volumes:
+      - ./Frontend/dulcemaria-web:/usr/src/app
+      - dulcemaria_frontend_node_modules:/usr/src/app/node_modules
+
+  sitio_web:
+    build:
+      context: ./Sitio_web
+      dockerfile: Dockerfile
+    container_name: dulcemaria-sitio-web-dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Vite only exposes VITE_-prefixed vars via import.meta.env; picked up
+      # live by the dev server, resolved by the browser (same reasoning as
+      # NUXT_PUBLIC_API_BASE above — must stay localhost).
+      VITE_API_BASE: http://localhost:4301
+    ports:
+      - "4303:3000"
+    volumes:
+      - ./Sitio_web:/usr/src/app
+      - dulcemaria_sitio_web_node_modules:/usr/src/app/node_modules
+
+volumes:
+  dulcemaria_db_data:
+  dulcemaria_backend_node_modules:
+  dulcemaria_frontend_node_modules:
+  dulcemaria_sitio_web_node_modules:

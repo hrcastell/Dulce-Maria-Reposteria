@@ -136,6 +136,11 @@ async function runCompleteMigrations() {
 
     // users
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+    // users.permissions — requerido por GET /auth/me y admin.users.js.
+    // Ver migrations/add_permissions_column.sql (histórico, nunca ejecutado
+    // automáticamente); esta línea es la que realmente crea la columna en
+    // una base de datos nueva, siguiendo el mismo patrón idempotente.
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}';`,
 
     // products
     `ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
