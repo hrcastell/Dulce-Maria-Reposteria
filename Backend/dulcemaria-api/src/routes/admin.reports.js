@@ -158,6 +158,15 @@ router.get("/monthly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, 
       [startDate]
     );
 
+    const salesByPaymentMethod = await pool.query(
+      `SELECT payment_method, COUNT(*)::int AS count
+       FROM orders
+       WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', $1::date)
+         AND status <> 'CANCELLED'
+       GROUP BY payment_method`,
+      [startDate]
+    );
+
     // Días/meses sin órdenes reales no entran en el GROUP BY, así que no ensucian el "peor día".
     let bestSalesDay = null;
     let worstSalesDay = null;
@@ -185,6 +194,10 @@ router.get("/monthly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, 
       }
     }
 
+    const topCustomers = [...salesByCustomer.rows]
+      .sort((a, b) => b.total_clp - a.total_clp)
+      .slice(0, 10);
+
     return res.json({
       ok: true,
       year,
@@ -197,6 +210,8 @@ router.get("/monthly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, 
       mostOrdersDay,
       topCustomerByOrders,
       topCustomerBySpend,
+      topCustomers,
+      salesByPaymentMethod: salesByPaymentMethod.rows,
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
@@ -262,6 +277,31 @@ router.get("/yearly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
       [year]
     );
 
+    const topProducts = await pool.query(
+      `SELECT
+         oi.product_id,
+         oi.product_name_snapshot AS name,
+         SUM(oi.qty)::int AS qty,
+         SUM(oi.line_total_clp)::int AS total_clp
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE EXTRACT(YEAR FROM o.created_at) = $1::int
+         AND o.status <> 'CANCELLED'
+       GROUP BY oi.product_id, oi.product_name_snapshot
+       ORDER BY qty DESC
+       LIMIT 10`,
+      [year]
+    );
+
+    const salesByPaymentMethod = await pool.query(
+      `SELECT payment_method, COUNT(*)::int AS count
+       FROM orders
+       WHERE EXTRACT(YEAR FROM created_at) = $1::int
+         AND status <> 'CANCELLED'
+       GROUP BY payment_method`,
+      [year]
+    );
+
     const salesByMonthMap = new Map(salesByMonth.rows.map((row) => [row.month, row]));
     const expensesByMonthMap = new Map(expensesByMonth.rows.map((row) => [row.month, row]));
 
@@ -305,6 +345,10 @@ router.get("/yearly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
       }
     }
 
+    const topCustomers = [...salesByCustomer.rows]
+      .sort((a, b) => b.total_clp - a.total_clp)
+      .slice(0, 10);
+
     return res.json({
       ok: true,
       year,
@@ -315,6 +359,9 @@ router.get("/yearly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
       mostOrdersMonth,
       topCustomerByOrders,
       topCustomerBySpend,
+      topCustomers,
+      topProducts: topProducts.rows,
+      salesByPaymentMethod: salesByPaymentMethod.rows,
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });

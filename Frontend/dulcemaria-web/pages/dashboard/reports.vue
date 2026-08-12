@@ -165,7 +165,7 @@
           <div class="flex items-center">
             <div class="w-12 h-12 rounded-full bg-secondary-100 flex items-center justify-center text-2xl flex-shrink-0">💎</div>
             <div class="ml-4">
-              <p class="text-sm text-warm-500">Cliente con Mayor Gasto</p>
+              <p class="text-sm text-warm-500">Cliente con Más Compras</p>
               <p class="text-lg font-bold text-warm-800">{{ report.topCustomerBySpend ? report.topCustomerBySpend.full_name : 'Sin datos' }}</p>
               <p v-if="report.topCustomerBySpend" class="text-sm font-semibold text-primary-600">${{ formatPrice(report.topCustomerBySpend.total_clp) }}</p>
             </div>
@@ -192,6 +192,13 @@
           </div>
         </div>
       </div>
+
+      <!-- Top Lists (Clientes / Productos / Medios de Pago) -->
+      <TopListsCard
+        :top-customers="report.topCustomers ?? []"
+        :top-products="report.topProducts ?? []"
+        :payment-methods="report.paymentMethods ?? []"
+      />
 
       <!-- Orders Grid -->
       <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 mb-6">
@@ -248,32 +255,6 @@
               <span class="text-lg font-bold text-warm-800">${{ formatPrice(order.total_clp) }}</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Top Products -->
-      <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
-        <h3 class="text-lg font-semibold text-warm-800 mb-4">Productos Más Vendidos</h3>
-        <div v-if="report.topProducts && report.topProducts.length > 0">
-          <div class="space-y-2">
-            <div
-              v-for="(product, index) in report.topProducts"
-              :key="product.product_id"
-              class="flex items-center justify-between py-3 border-b border-warm-100 last:border-0"
-            >
-              <div class="flex items-center">
-                <span class="text-sm font-semibold text-warm-400 w-7">{{ index + 1 }}.</span>
-                <div class="ml-2">
-                  <p class="text-sm font-medium text-warm-800">{{ product.name }}</p>
-                  <p class="text-xs text-warm-500">{{ product.qty }} unidades</p>
-                </div>
-              </div>
-              <p class="text-sm font-semibold text-warm-800">${{ formatPrice(product.total_clp) }}</p>
-            </div>
-          </div>
-        </div>
-        <div v-else class="text-center py-8 text-warm-400">
-          No hay datos de productos para este período
         </div>
       </div>
     </div>
@@ -359,6 +340,13 @@
         </div>
       </div>
 
+      <!-- Top Lists (Clientes / Productos / Medios de Pago) -->
+      <TopListsCard
+        :top-customers="yearlyReport.topCustomers ?? []"
+        :top-products="yearlyReport.topProducts ?? []"
+        :payment-methods="yearlyReport.paymentMethods ?? []"
+      />
+
       <!-- Extra KPIs (Por Año) -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
@@ -405,7 +393,7 @@
           <div class="flex items-center">
             <div class="w-12 h-12 rounded-full bg-secondary-100 flex items-center justify-center text-2xl flex-shrink-0">💎</div>
             <div class="ml-4">
-              <p class="text-sm text-warm-500">Cliente con Mayor Gasto</p>
+              <p class="text-sm text-warm-500">Cliente con Más Compras</p>
               <p class="text-lg font-bold text-warm-800">{{ yearlyReport.topCustomerBySpend ? yearlyReport.topCustomerBySpend.full_name : 'Sin datos' }}</p>
               <p v-if="yearlyReport.topCustomerBySpend" class="text-sm font-semibold text-primary-600">${{ formatPrice(yearlyReport.topCustomerBySpend.total_clp) }}</p>
             </div>
@@ -487,6 +475,11 @@ interface MonthlyBreakdownItem {
   expenses_clp: number
 }
 
+interface PaymentMethodBreakdown {
+  payment_method: string
+  count: number
+}
+
 interface Report {
   ordersCount: number
   totalClp: number
@@ -498,6 +491,8 @@ interface Report {
   mostOrdersDay?: DayOrdersExtreme | null
   topCustomerByOrders?: TopCustomer | null
   topCustomerBySpend?: TopCustomer | null
+  topCustomers?: TopCustomer[]
+  paymentMethods?: PaymentMethodBreakdown[]
 }
 
 interface YearlyReport {
@@ -509,6 +504,9 @@ interface YearlyReport {
   mostOrdersMonth?: MonthOrdersExtreme | null
   topCustomerByOrders?: TopCustomer | null
   topCustomerBySpend?: TopCustomer | null
+  topCustomers?: TopCustomer[]
+  topProducts?: TopProduct[]
+  paymentMethods?: PaymentMethodBreakdown[]
 }
 
 const now = new Date()
@@ -608,7 +606,9 @@ const loadReport = async () => {
           worstSalesDay: res.worstSalesDay ?? null,
           mostOrdersDay: res.mostOrdersDay ?? null,
           topCustomerByOrders: res.topCustomerByOrders ?? null,
-          topCustomerBySpend: res.topCustomerBySpend ?? null
+          topCustomerBySpend: res.topCustomerBySpend ?? null,
+          topCustomers: res.topCustomers ?? [],
+          paymentMethods: res.salesByPaymentMethod ?? []
         }
       }
     } else {
@@ -622,7 +622,10 @@ const loadReport = async () => {
           worstSalesMonth: res.worstSalesMonth ?? null,
           mostOrdersMonth: res.mostOrdersMonth ?? null,
           topCustomerByOrders: res.topCustomerByOrders ?? null,
-          topCustomerBySpend: res.topCustomerBySpend ?? null
+          topCustomerBySpend: res.topCustomerBySpend ?? null,
+          topCustomers: res.topCustomers ?? [],
+          topProducts: res.topProducts ?? [],
+          paymentMethods: res.salesByPaymentMethod ?? []
         }
       }
     }
