@@ -7,7 +7,7 @@
     </div>
 
     <!-- Mode Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button
         :class="mode === 'day' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'"
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -22,6 +22,13 @@
       >
         <span class="mr-2">📆</span> Por Mes
       </button>
+      <button
+        :class="mode === 'year' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'"
+        class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
+        @click="mode = 'year'; loadReport()"
+      >
+        <span class="mr-2">📈</span> Por Año
+      </button>
     </div>
 
     <!-- Filters -->
@@ -31,7 +38,7 @@
           <label class="block text-sm font-medium text-warm-700 mb-1.5">Fecha</label>
           <input v-model="selectedDate" type="date" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" @change="loadReport">
         </div>
-        <div v-else class="flex flex-wrap gap-4 w-full sm:w-auto">
+        <div v-else-if="mode === 'month'" class="flex flex-wrap gap-4 w-full sm:w-auto">
           <div class="w-full sm:w-auto">
             <label class="block text-sm font-medium text-warm-700 mb-1.5">Año</label>
             <input v-model.number="selectedYear" type="number" min="2020" max="2099" class="block w-full sm:w-28 px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" @change="loadReport">
@@ -42,6 +49,10 @@
               <option v-for="m in months" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
           </div>
+        </div>
+        <div v-else class="flex-1 max-w-xs w-full">
+          <label class="block text-sm font-medium text-warm-700 mb-1.5">Año</label>
+          <input v-model.number="selectedYear" type="number" min="2020" max="2099" class="block w-full sm:w-28 px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 transition-all" @change="loadReport">
         </div>
         <button 
           class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-warm-100 hover:bg-warm-200 text-warm-700 font-medium rounded-xl transition-all duration-200"
@@ -68,7 +79,7 @@
       </div>
     </div>
 
-    <div v-else-if="report">
+    <div v-else-if="mode !== 'year' && report">
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
@@ -103,6 +114,80 @@
               <p class="text-2xl font-bold text-warm-800">
                 ${{ formatPrice(report.ordersCount > 0 ? report.totalClp / report.ordersCount : 0) }}
               </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Extra KPIs (Por Mes) -->
+      <div v-if="mode === 'month'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-success-100 flex items-center justify-center text-2xl flex-shrink-0">🏆</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Día con Más Ventas</p>
+              <p class="text-lg font-bold text-warm-800">{{ report.bestSalesDay ? formatDayShort(report.bestSalesDay.day) : 'Sin datos' }}</p>
+              <p v-if="report.bestSalesDay" class="text-sm font-semibold text-primary-600">${{ formatPrice(report.bestSalesDay.sales_clp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-error-100 flex items-center justify-center text-2xl flex-shrink-0">📉</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Día con Menos Ventas</p>
+              <p class="text-lg font-bold text-warm-800">{{ report.worstSalesDay ? formatDayShort(report.worstSalesDay.day) : 'Sin datos' }}</p>
+              <p v-if="report.worstSalesDay" class="text-sm font-semibold text-primary-600">${{ formatPrice(report.worstSalesDay.sales_clp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-warning-100 flex items-center justify-center text-2xl flex-shrink-0">🔥</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Día con Más Órdenes</p>
+              <p class="text-lg font-bold text-warm-800">{{ report.mostOrdersDay ? formatDayShort(report.mostOrdersDay.day) : 'Sin datos' }}</p>
+              <p v-if="report.mostOrdersDay" class="text-sm font-semibold text-warm-700">{{ report.mostOrdersDay.orders_count }} órdenes</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-info-100 flex items-center justify-center text-2xl flex-shrink-0">👑</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Cliente con Más Órdenes</p>
+              <p class="text-lg font-bold text-warm-800">{{ report.topCustomerByOrders ? report.topCustomerByOrders.full_name : 'Sin datos' }}</p>
+              <p v-if="report.topCustomerByOrders" class="text-sm font-semibold text-warm-700">{{ report.topCustomerByOrders.orders_count }} órdenes</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-secondary-100 flex items-center justify-center text-2xl flex-shrink-0">💎</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Cliente con Mayor Gasto</p>
+              <p class="text-lg font-bold text-warm-800">{{ report.topCustomerBySpend ? report.topCustomerBySpend.full_name : 'Sin datos' }}</p>
+              <p v-if="report.topCustomerBySpend" class="text-sm font-semibold text-primary-600">${{ formatPrice(report.topCustomerBySpend.total_clp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-error-100 flex items-center justify-center text-2xl flex-shrink-0">🧾</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Total Gastos</p>
+              <p class="text-lg font-bold text-error-600">${{ formatPrice(report.expensesClp ?? 0) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 sm:col-span-2 lg:col-span-1">
+          <div class="flex items-center">
+            <div :class="monthlyNetProfit >= 0 ? 'bg-success-100' : 'bg-error-100'" class="w-12 h-12 rounded-full flex items-center justify-center text-2xl flex-shrink-0">
+              {{ monthlyNetProfit >= 0 ? '📈' : '📉' }}
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Ganancia Neta del Mes</p>
+              <p :class="monthlyNetProfit >= 0 ? 'text-success-700' : 'text-error-600'" class="text-lg font-bold">${{ formatPrice(monthlyNetProfit) }}</p>
             </div>
           </div>
         </div>
@@ -193,13 +278,149 @@
       </div>
     </div>
 
+    <div v-else-if="mode === 'year' && yearlyReport">
+      <!-- Summary Cards -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-2xl flex-shrink-0">
+              📦
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Total Órdenes</p>
+              <p class="text-2xl font-bold text-warm-800">{{ yearlyReport.ordersCount }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-success-100 flex items-center justify-center text-2xl flex-shrink-0">
+              💰
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Total Ventas</p>
+              <p class="text-2xl font-bold text-primary-600">${{ formatPrice(yearlyReport.totalClp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+             <div class="w-12 h-12 rounded-full bg-warm-100 flex items-center justify-center text-2xl flex-shrink-0">
+              📊
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Promedio por Orden</p>
+              <p class="text-2xl font-bold text-warm-800">
+                ${{ formatPrice(yearlyReport.ordersCount > 0 ? yearlyReport.totalClp / yearlyReport.ordersCount : 0) }}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-error-100 flex items-center justify-center text-2xl flex-shrink-0">
+              🧾
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Total Gastos</p>
+              <p class="text-2xl font-bold text-error-600">${{ formatPrice(yearlyTotalExpenses) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 sm:col-span-2 lg:col-span-1">
+          <div class="flex items-center">
+            <div :class="yearlyNetProfit >= 0 ? 'bg-success-100' : 'bg-error-100'" class="w-12 h-12 rounded-full flex items-center justify-center text-2xl flex-shrink-0">
+              {{ yearlyNetProfit >= 0 ? '📈' : '📉' }}
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Ganancia Neta</p>
+              <p :class="yearlyNetProfit >= 0 ? 'text-success-700' : 'text-error-600'" class="text-2xl font-bold">${{ formatPrice(yearlyNetProfit) }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sales vs Expenses Chart -->
+      <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-6 mb-6">
+        <h3 class="text-lg font-semibold text-warm-800 mb-4">Ventas vs Gastos por Mes</h3>
+        <div class="h-72 sm:h-96 relative">
+          <ClientOnly>
+            <SalesExpensesChart
+              :labels="yearlyChartLabels"
+              :sales-data="yearlySalesData"
+              :expenses-data="yearlyExpensesData"
+            />
+            <template #fallback>
+              <div class="flex items-center justify-center h-full text-warm-400">
+                Cargando gráfico...
+              </div>
+            </template>
+          </ClientOnly>
+        </div>
+      </div>
+
+      <!-- Extra KPIs (Por Año) -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-success-100 flex items-center justify-center text-2xl flex-shrink-0">🏆</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Mes con Más Ventas</p>
+              <p class="text-lg font-bold text-warm-800">{{ yearlyReport.bestSalesMonth ? monthLabel(yearlyReport.bestSalesMonth.month) : 'Sin datos' }}</p>
+              <p v-if="yearlyReport.bestSalesMonth" class="text-sm font-semibold text-primary-600">${{ formatPrice(yearlyReport.bestSalesMonth.sales_clp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-error-100 flex items-center justify-center text-2xl flex-shrink-0">📉</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Mes con Menos Ventas</p>
+              <p class="text-lg font-bold text-warm-800">{{ yearlyReport.worstSalesMonth ? monthLabel(yearlyReport.worstSalesMonth.month) : 'Sin datos' }}</p>
+              <p v-if="yearlyReport.worstSalesMonth" class="text-sm font-semibold text-primary-600">${{ formatPrice(yearlyReport.worstSalesMonth.sales_clp) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-warning-100 flex items-center justify-center text-2xl flex-shrink-0">🔥</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Mes con Más Órdenes</p>
+              <p class="text-lg font-bold text-warm-800">{{ yearlyReport.mostOrdersMonth ? monthLabel(yearlyReport.mostOrdersMonth.month) : 'Sin datos' }}</p>
+              <p v-if="yearlyReport.mostOrdersMonth" class="text-sm font-semibold text-warm-700">{{ yearlyReport.mostOrdersMonth.orders_count }} órdenes</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-info-100 flex items-center justify-center text-2xl flex-shrink-0">👑</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Cliente con Más Órdenes</p>
+              <p class="text-lg font-bold text-warm-800">{{ yearlyReport.topCustomerByOrders ? yearlyReport.topCustomerByOrders.full_name : 'Sin datos' }}</p>
+              <p v-if="yearlyReport.topCustomerByOrders" class="text-sm font-semibold text-warm-700">{{ yearlyReport.topCustomerByOrders.orders_count }} órdenes</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 sm:col-span-2 lg:col-span-1">
+          <div class="flex items-center">
+            <div class="w-12 h-12 rounded-full bg-secondary-100 flex items-center justify-center text-2xl flex-shrink-0">💎</div>
+            <div class="ml-4">
+              <p class="text-sm text-warm-500">Cliente con Mayor Gasto</p>
+              <p class="text-lg font-bold text-warm-800">{{ yearlyReport.topCustomerBySpend ? yearlyReport.topCustomerBySpend.full_name : 'Sin datos' }}</p>
+              <p v-if="yearlyReport.topCustomerBySpend" class="text-sm font-semibold text-primary-600">${{ formatPrice(yearlyReport.topCustomerBySpend.total_clp) }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Empty State -->
-    <div v-if="!loading && !error && !report" class="text-center py-12">
+    <div v-if="!loading && !error && !hasAnyReport" class="text-center py-12">
       <div class="w-20 h-20 bg-warm-50 rounded-full flex items-center justify-center mx-auto mb-4">
         <span class="text-4xl">📊</span>
       </div>
       <h3 class="text-lg font-semibold text-warm-800 mb-2">Selecciona un período</h3>
-      <p class="text-warm-500">Elige una fecha o mes para ver el reporte detallado</p>
+      <p class="text-warm-500">Elige una fecha, mes o año para ver el reporte detallado</p>
     </div>
   </div>
 </template>
@@ -232,19 +453,71 @@ interface TopProduct {
   total_clp: number
 }
 
+interface TopCustomer {
+  customer_id: string
+  full_name: string
+  orders_count: number
+  total_clp: number
+}
+
+interface DaySalesExtreme {
+  day: string
+  sales_clp: number
+}
+
+interface DayOrdersExtreme {
+  day: string
+  orders_count: number
+}
+
+interface MonthSalesExtreme {
+  month: number
+  sales_clp: number
+}
+
+interface MonthOrdersExtreme {
+  month: number
+  orders_count: number
+}
+
+interface MonthlyBreakdownItem {
+  month: number
+  orders_count: number
+  sales_clp: number
+  expenses_clp: number
+}
+
 interface Report {
   ordersCount: number
   totalClp: number
+  expensesClp?: number
   orders?: OrderRow[]
   topProducts?: TopProduct[]
+  bestSalesDay?: DaySalesExtreme | null
+  worstSalesDay?: DaySalesExtreme | null
+  mostOrdersDay?: DayOrdersExtreme | null
+  topCustomerByOrders?: TopCustomer | null
+  topCustomerBySpend?: TopCustomer | null
+}
+
+interface YearlyReport {
+  ordersCount: number
+  totalClp: number
+  monthlyBreakdown: MonthlyBreakdownItem[]
+  bestSalesMonth?: MonthSalesExtreme | null
+  worstSalesMonth?: MonthSalesExtreme | null
+  mostOrdersMonth?: MonthOrdersExtreme | null
+  topCustomerByOrders?: TopCustomer | null
+  topCustomerBySpend?: TopCustomer | null
 }
 
 const now = new Date()
 const selectedDate = ref(now.toISOString().split('T')[0])
 const selectedYear = ref(now.getFullYear())
 const selectedMonth = ref(now.getMonth() + 1)
-const mode = ref<'day' | 'month'>('day')
+const mode = ref<'day' | 'month' | 'year'>('day')
 const report = ref<Report | null>(null)
+const yearlyReport = ref<YearlyReport | null>(null)
 const loading = ref(false)
 const error = ref('')
 
@@ -262,6 +535,30 @@ const formatPrice = (price: number) =>
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
+
+// Las fechas de bestSalesDay/worstSalesDay/mostOrdersDay vienen como "YYYY-MM-DD"
+// (sin hora). Se formatean con split en lugar de `new Date()` para evitar
+// corrimientos de un día por conversión de zona horaria.
+const formatDayShort = (day: string) => {
+  const [y, m, d] = day.split('-')
+  return `${d}-${m}-${y}`
+}
+
+const monthLabel = (m: number) =>
+  months.find((x) => x.value === m)?.label ?? String(m)
+
+const hasAnyReport = computed(() =>
+  mode.value === 'year' ? !!yearlyReport.value : !!report.value
+)
+
+const yearlyChartLabels = computed(() => months.map((m) => m.label))
+const yearlySalesData = computed(() => yearlyReport.value?.monthlyBreakdown.map((m) => m.sales_clp) ?? [])
+const yearlyExpensesData = computed(() => yearlyReport.value?.monthlyBreakdown.map((m) => m.expenses_clp) ?? [])
+const yearlyTotalExpenses = computed(() =>
+  yearlyReport.value?.monthlyBreakdown.reduce((sum, m) => sum + m.expenses_clp, 0) ?? 0
+)
+const yearlyNetProfit = computed(() => (yearlyReport.value?.totalClp ?? 0) - yearlyTotalExpenses.value)
+const monthlyNetProfit = computed(() => (report.value?.totalClp ?? 0) - (report.value?.expensesClp ?? 0))
 
 const statusLabel = (s: string) => ({
   PENDING: 'Pendiente', PENDING_PAYMENT: 'Pend. Pago',
@@ -284,6 +581,7 @@ const loadReport = async () => {
     loading.value = true
     error.value = ''
     report.value = null
+    yearlyReport.value = null
 
     if (mode.value === 'day') {
       if (!selectedDate.value) return
@@ -296,15 +594,35 @@ const loadReport = async () => {
           topProducts: res.topProducts ?? []
         }
       }
-    } else {
+    } else if (mode.value === 'month') {
       const mm = String(selectedMonth.value).padStart(2, '0')
       const res = await api.get<any>(`/admin/reports/monthly?year=${selectedYear.value}&month=${mm}`)
       if (res.ok) {
         report.value = {
           ordersCount: res.totals?.orders_count ?? 0,
           totalClp: res.totals?.total_clp ?? 0,
+          expensesClp: res.totals?.expenses_clp ?? 0,
           orders: res.orders ?? [],
-          topProducts: res.topProducts ?? []
+          topProducts: res.topProducts ?? [],
+          bestSalesDay: res.bestSalesDay ?? null,
+          worstSalesDay: res.worstSalesDay ?? null,
+          mostOrdersDay: res.mostOrdersDay ?? null,
+          topCustomerByOrders: res.topCustomerByOrders ?? null,
+          topCustomerBySpend: res.topCustomerBySpend ?? null
+        }
+      }
+    } else {
+      const res = await api.get<any>(`/admin/reports/yearly?year=${selectedYear.value}`)
+      if (res.ok) {
+        yearlyReport.value = {
+          ordersCount: res.totals?.orders_count ?? 0,
+          totalClp: res.totals?.total_clp ?? 0,
+          monthlyBreakdown: res.monthlyBreakdown ?? [],
+          bestSalesMonth: res.bestSalesMonth ?? null,
+          worstSalesMonth: res.worstSalesMonth ?? null,
+          mostOrdersMonth: res.mostOrdersMonth ?? null,
+          topCustomerByOrders: res.topCustomerByOrders ?? null,
+          topCustomerBySpend: res.topCustomerBySpend ?? null
         }
       }
     }

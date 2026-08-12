@@ -125,13 +125,196 @@ router.get("/monthly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, 
       [startDate]
     );
 
+    const salesByDay = await pool.query(
+      `SELECT
+         TO_CHAR(o.created_at::date, 'YYYY-MM-DD') AS day,
+         COUNT(*)::int AS orders_count,
+         COALESCE(SUM(o.total_clp),0)::int AS sales_clp
+       FROM orders o
+       WHERE DATE_TRUNC('month', o.created_at) = DATE_TRUNC('month', $1::date)
+         AND o.status <> 'CANCELLED'
+       GROUP BY o.created_at::date`,
+      [startDate]
+    );
+
+    const salesByCustomer = await pool.query(
+      `SELECT
+         c.id AS customer_id,
+         c.full_name,
+         COUNT(*)::int AS orders_count,
+         COALESCE(SUM(o.total_clp),0)::int AS total_clp
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE DATE_TRUNC('month', o.created_at) = DATE_TRUNC('month', $1::date)
+         AND o.status <> 'CANCELLED'
+       GROUP BY c.id, c.full_name`,
+      [startDate]
+    );
+
+    const expenses = await pool.query(
+      `SELECT COALESCE(SUM(amount_clp),0)::int AS expenses_clp
+       FROM expense_records
+       WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', $1::date)`,
+      [startDate]
+    );
+
+    // Días/meses sin órdenes reales no entran en el GROUP BY, así que no ensucian el "peor día".
+    let bestSalesDay = null;
+    let worstSalesDay = null;
+    let mostOrdersDay = null;
+    for (const row of salesByDay.rows) {
+      if (!bestSalesDay || row.sales_clp > bestSalesDay.sales_clp) {
+        bestSalesDay = { day: row.day, sales_clp: row.sales_clp };
+      }
+      if (!worstSalesDay || row.sales_clp < worstSalesDay.sales_clp) {
+        worstSalesDay = { day: row.day, sales_clp: row.sales_clp };
+      }
+      if (!mostOrdersDay || row.orders_count > mostOrdersDay.orders_count) {
+        mostOrdersDay = { day: row.day, orders_count: row.orders_count };
+      }
+    }
+
+    let topCustomerByOrders = null;
+    let topCustomerBySpend = null;
+    for (const row of salesByCustomer.rows) {
+      if (!topCustomerByOrders || row.orders_count > topCustomerByOrders.orders_count) {
+        topCustomerByOrders = row;
+      }
+      if (!topCustomerBySpend || row.total_clp > topCustomerBySpend.total_clp) {
+        topCustomerBySpend = row;
+      }
+    }
+
     return res.json({
       ok: true,
       year,
       month,
-      totals: totals.rows[0],
+      totals: { ...totals.rows[0], expenses_clp: expenses.rows[0].expenses_clp },
       orders: orders.rows,
       topProducts: topProducts.rows,
+      bestSalesDay,
+      worstSalesDay,
+      mostOrdersDay,
+      topCustomerByOrders,
+      topCustomerBySpend,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+/**
+ * GET /admin/reports/yearly?year=YYYY
+ */
+router.get("/yearly", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  const schema = z.object({ year: z.string().regex(/^\d{4}$/) });
+  const parsed = schema.safeParse({ year: String(req.query.year || "") });
+  if (!parsed.success) return res.status(400).json({ ok: false, error: "Debes enviar ?year=YYYY" });
+
+  const { year } = parsed.data;
+
+  try {
+    const pool = getPool();
+
+    const totals = await pool.query(
+      `SELECT
+         COUNT(*)::int AS orders_count,
+         COALESCE(SUM(total_clp),0)::int AS total_clp
+       FROM orders
+       WHERE EXTRACT(YEAR FROM created_at) = $1::int
+         AND status <> 'CANCELLED'`,
+      [year]
+    );
+
+    const salesByMonth = await pool.query(
+      `SELECT
+         EXTRACT(MONTH FROM o.created_at)::int AS month,
+         COUNT(*)::int AS orders_count,
+         COALESCE(SUM(o.total_clp),0)::int AS sales_clp
+       FROM orders o
+       WHERE EXTRACT(YEAR FROM o.created_at) = $1::int
+         AND o.status <> 'CANCELLED'
+       GROUP BY EXTRACT(MONTH FROM o.created_at)`,
+      [year]
+    );
+
+    const expensesByMonth = await pool.query(
+      `SELECT
+         EXTRACT(MONTH FROM e.expense_date)::int AS month,
+         COALESCE(SUM(e.amount_clp),0)::int AS expenses_clp
+       FROM expense_records e
+       WHERE EXTRACT(YEAR FROM e.expense_date) = $1::int
+       GROUP BY EXTRACT(MONTH FROM e.expense_date)`,
+      [year]
+    );
+
+    const salesByCustomer = await pool.query(
+      `SELECT
+         c.id AS customer_id,
+         c.full_name,
+         COUNT(*)::int AS orders_count,
+         COALESCE(SUM(o.total_clp),0)::int AS total_clp
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE EXTRACT(YEAR FROM o.created_at) = $1::int
+         AND o.status <> 'CANCELLED'
+       GROUP BY c.id, c.full_name`,
+      [year]
+    );
+
+    const salesByMonthMap = new Map(salesByMonth.rows.map((row) => [row.month, row]));
+    const expensesByMonthMap = new Map(expensesByMonth.rows.map((row) => [row.month, row]));
+
+    const monthlyBreakdown = Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1;
+      const salesRow = salesByMonthMap.get(month);
+      const expensesRow = expensesByMonthMap.get(month);
+      return {
+        month,
+        orders_count: salesRow ? salesRow.orders_count : 0,
+        sales_clp: salesRow ? salesRow.sales_clp : 0,
+        expenses_clp: expensesRow ? expensesRow.expenses_clp : 0,
+      };
+    });
+
+    // Meses sin órdenes quedan afuera del cómputo de mejor/peor/más-órdenes: son ausencia de operación, no una señal de "peor mes".
+    let bestSalesMonth = null;
+    let worstSalesMonth = null;
+    let mostOrdersMonth = null;
+    for (const m of monthlyBreakdown) {
+      if (m.orders_count === 0) continue;
+      if (!bestSalesMonth || m.sales_clp > bestSalesMonth.sales_clp) {
+        bestSalesMonth = { month: m.month, sales_clp: m.sales_clp };
+      }
+      if (!worstSalesMonth || m.sales_clp < worstSalesMonth.sales_clp) {
+        worstSalesMonth = { month: m.month, sales_clp: m.sales_clp };
+      }
+      if (!mostOrdersMonth || m.orders_count > mostOrdersMonth.orders_count) {
+        mostOrdersMonth = { month: m.month, orders_count: m.orders_count };
+      }
+    }
+
+    let topCustomerByOrders = null;
+    let topCustomerBySpend = null;
+    for (const row of salesByCustomer.rows) {
+      if (!topCustomerByOrders || row.orders_count > topCustomerByOrders.orders_count) {
+        topCustomerByOrders = row;
+      }
+      if (!topCustomerBySpend || row.total_clp > topCustomerBySpend.total_clp) {
+        topCustomerBySpend = row;
+      }
+    }
+
+    return res.json({
+      ok: true,
+      year,
+      totals: totals.rows[0],
+      monthlyBreakdown,
+      bestSalesMonth,
+      worstSalesMonth,
+      mostOrdersMonth,
+      topCustomerByOrders,
+      topCustomerBySpend,
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });

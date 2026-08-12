@@ -53,6 +53,51 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
 });
 
 /**
+ * GET /admin/orders/pending-notifications
+ * Returns pending orders created in last 24h for real-time admin notification
+ *
+ * Registrada ANTES de /:id a propósito: Express matchea rutas en orden de
+ * registro, así que si esta fuera declarada después, /:id la capturaría
+ * primero (tratando "pending-notifications" como el :id) y validateUuidParam
+ * la rechazaría con 400 en cada poll.
+ */
+router.get("/pending-notifications", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT o.id, o.order_no, o.status, o.payment_status, o.total_clp, o.created_at,
+        c.full_name AS customer_name, c.phone AS customer_phone
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE o.status = 'PENDING_PAYMENT'
+         AND o.created_at >= NOW() - INTERVAL '24 hours'
+       ORDER BY o.created_at DESC
+       LIMIT 50`
+    );
+
+    // Also check cake_orders
+    const cakeR = await pool.query(
+      `SELECT co.id, co.order_number, co.status, co.total_price_clp, co.created_at,
+        co.customer_name, co.customer_phone
+       FROM cake_orders co
+       WHERE co.status = 'PENDING'
+         AND co.created_at >= NOW() - INTERVAL '24 hours'
+       ORDER BY co.created_at DESC
+       LIMIT 50`
+    );
+
+    return res.json({
+      ok: true,
+      orders: r.rows,
+      cake_orders: cakeR.rows,
+      total: r.rowCount + cakeR.rowCount
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
+/**
  * GET /admin/orders/:id
  * Detalle de una venta (cabecera + items)
  */
@@ -108,9 +153,13 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     paymentStatus: z.enum(PAYMENT_STATUS).default("PAID"),
 
     status: z.enum(ORDER_STATUS).default("DELIVERED"),
-    
+
     discountAmountClp: z.number().int().nonnegative().default(0),
     finalPriceOverrideClp: z.number().int().nonnegative().optional().nullable(),
+
+    // Fecha real de la venta (para registrar ventas de días anteriores sin
+    // tocar la BD a mano). Opcional: si no viene, created_at usa NOW() como siempre.
+    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   });
 
   const parsed = schema.safeParse(req.body);
@@ -118,7 +167,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
   const {
     customerId, items, deliveryMethod, deliveryFeeClp, paymentMethod, paymentStatus, status,
-    discountAmountClp, finalPriceOverrideClp
+    discountAmountClp, finalPriceOverrideClp, orderDate
   } = parsed.data;
 
   const pool = getPool();
@@ -277,11 +326,11 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
           subtotal_clp, delivery_fee_clp, discount_amount_clp, final_price_override_clp, total_clp,
           created_at, updated_at
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::date + CURRENT_TIME, NOW()),NOW())
        RETURNING id, order_no, order_code, status, total_clp`,
       [
         orderId, orderCode, customerId, status, paymentStatus, paymentMethod, deliveryMethod,
-        subtotal, delivery, discount, finalPriceOverrideClp ?? null, total
+        subtotal, delivery, discount, finalPriceOverrideClp ?? null, total, orderDate ?? null
       ]
     );
 
@@ -385,46 +434,6 @@ router.patch("/:id/payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), valida
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
 
     return res.json({ ok: true, order: r.rows[0] });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
-  }
-});
-
-/**
- * GET /admin/orders/pending-notifications
- * Returns pending orders created in last 24h for real-time admin notification
- */
-router.get("/pending-notifications", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  try {
-    const pool = getPool();
-    const r = await pool.query(
-      `SELECT o.id, o.order_no, o.status, o.payment_status, o.total_clp, o.created_at,
-        c.full_name AS customer_name, c.phone AS customer_phone
-       FROM orders o
-       JOIN customers c ON c.id = o.customer_id
-       WHERE o.status = 'PENDING_PAYMENT'
-         AND o.created_at >= NOW() - INTERVAL '24 hours'
-       ORDER BY o.created_at DESC
-       LIMIT 50`
-    );
-
-    // Also check cake_orders
-    const cakeR = await pool.query(
-      `SELECT co.id, co.order_number, co.status, co.total_price_clp, co.created_at,
-        co.customer_name, co.customer_phone
-       FROM cake_orders co
-       WHERE co.status = 'PENDING'
-         AND co.created_at >= NOW() - INTERVAL '24 hours'
-       ORDER BY co.created_at DESC
-       LIMIT 50`
-    );
-
-    return res.json({
-      ok: true,
-      orders: r.rows,
-      cake_orders: cakeR.rows,
-      total: r.rowCount + cakeR.rowCount
-    });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

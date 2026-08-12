@@ -144,6 +144,10 @@ async function runCompleteMigrations() {
 
     // products
     `ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+    // products.cost_price_clp — costo del producto, usado para calcular el
+    // margen de ganancia en el formulario (precio - costo). Nullable: no
+    // todos los productos necesitan costo registrado.
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_clp INT;`,
 
     // ============================================
     // ÍNDICES

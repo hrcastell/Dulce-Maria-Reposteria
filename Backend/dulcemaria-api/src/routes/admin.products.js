@@ -63,7 +63,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT p.id, p.name, p.slug, p.description, p.price_clp, p.stock_qty, p.is_active, p.created_at, p.updated_at,
+      `SELECT p.id, p.name, p.slug, p.description, p.price_clp, p.cost_price_clp, p.stock_qty, p.is_active, p.created_at, p.updated_at,
               (SELECT url_thumb FROM product_images WHERE product_id=p.id AND is_primary=true ORDER BY sort_order ASC LIMIT 1) AS thumb_url
        FROM products p
        ORDER BY p.created_at DESC`
@@ -79,6 +79,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     name: z.string().min(2),
     description: z.string().optional(),
     priceClp: z.number().int().nonnegative(),
+    costPriceClp: z.number().int().nonnegative().optional().nullable(),
     stockQty: z.number().int().nonnegative().default(0),
     isActive: z.boolean().default(true),
   });
@@ -86,7 +87,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
-  const { name, description, priceClp, stockQty, isActive } = parsed.data;
+  const { name, description, priceClp, costPriceClp, stockQty, isActive } = parsed.data;
 
   try {
     const pool = getPool();
@@ -102,12 +103,12 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO products (id, name, slug, description, price_clp, stock_qty, is_active, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())`,
-      [id, name, slug, description ?? null, priceClp, stockQty, isActive]
+      `INSERT INTO products (id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),NOW())`,
+      [id, name, slug, description ?? null, priceClp, costPriceClp ?? null, stockQty, isActive]
     );
 
-    res.json({ ok: true, product: { id, name, slug, price_clp: priceClp, stock_qty: stockQty, is_active: isActive } });
+    res.json({ ok: true, product: { id, name, slug, price_clp: priceClp, cost_price_clp: costPriceClp ?? null, stock_qty: stockQty, is_active: isActive } });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -121,6 +122,7 @@ const updateProductHandler = async (req, res) => {
     name: z.string().min(2).optional(),
     description: z.string().optional().nullable(),
     priceClp: z.number().int().nonnegative().optional(),
+    costPriceClp: z.number().int().nonnegative().optional().nullable(),
     stockQty: z.number().int().nonnegative().optional(),
     isActive: z.boolean().optional(),
   });
@@ -155,6 +157,7 @@ const updateProductHandler = async (req, res) => {
     if (newSlug !== null) { fields.push(`slug=$${n}`); values.push(newSlug); n++; }
     if (patch.description !== undefined) { fields.push(`description=$${n}`); values.push(patch.description); n++; }
     if (patch.priceClp !== undefined) { fields.push(`price_clp=$${n}`); values.push(patch.priceClp); n++; }
+    if (patch.costPriceClp !== undefined) { fields.push(`cost_price_clp=$${n}`); values.push(patch.costPriceClp); n++; }
     if (patch.stockQty !== undefined) { fields.push(`stock_qty=$${n}`); values.push(patch.stockQty); n++; }
     if (patch.isActive !== undefined) { fields.push(`is_active=$${n}`); values.push(patch.isActive); n++; }
 
@@ -166,7 +169,7 @@ const updateProductHandler = async (req, res) => {
       UPDATE products
       SET ${fields.join(", ")}
       WHERE id=$${n}
-      RETURNING id, name, slug, description, price_clp, stock_qty, is_active, updated_at
+      RETURNING id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, updated_at
     `;
 
     const r = await pool.query(q, values);

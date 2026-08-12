@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",
+    "chart.js": "^4.5.1",
     "nuxt": "^3.14.0",
-    "vue": "latest"
+    "vue": "latest",
+    "vue-chartjs": "^5.3.4"
   },
   "devDependencies": {
     "@nuxtjs/color-mode": "^3.5.2",
