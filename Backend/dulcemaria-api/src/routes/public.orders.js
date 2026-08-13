@@ -31,7 +31,12 @@ router.post("/", async (req, res) => {
 
   const { customer_name, customer_phone, customer_address, items } = parsed.data;
   const pool = getPool();
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
 
   try {
     await client.query("BEGIN");
@@ -104,7 +109,11 @@ router.post("/", async (req, res) => {
       order_no: order.order_no,
     });
   } catch (e) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("Rollback failed:", rollbackErr.message);
+    }
     console.error("Error creating public order:", e);
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   } finally {

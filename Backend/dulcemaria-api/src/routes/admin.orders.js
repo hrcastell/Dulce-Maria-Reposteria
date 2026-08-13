@@ -171,7 +171,12 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
   } = parsed.data;
 
   const pool = getPool();
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
 
   try {
     await client.query("BEGIN");
@@ -362,7 +367,11 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       }
     });
   } catch (e) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("Rollback failed:", rollbackErr.message);
+    }
 
     const statusCode = Number(e?.statusCode || 400);
     return res.status(statusCode).json({ ok: false, error: String(e?.message ?? e) });

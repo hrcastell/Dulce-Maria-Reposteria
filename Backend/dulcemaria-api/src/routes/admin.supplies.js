@@ -107,17 +107,35 @@ router.get("/expenses", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req,
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT e.id, e.supply_id, e.description, e.amount_clp, e.expense_date, e.notes, e.created_at,
-              s.name AS supply_name
+      `SELECT e.id, e.supply_id, e.provider_id, e.description, e.amount_clp, e.expense_date, e.notes, e.created_at,
+              s.name AS supply_name, p.name AS provider_name
        FROM expense_records e
        LEFT JOIN supplies s ON s.id = e.supply_id
+       LEFT JOIN providers p ON p.id = e.provider_id
        WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', $1::date)
        ORDER BY e.expense_date DESC, e.created_at DESC`,
       [startDate]
     );
 
+    const expenseIds = r.rows.map((row) => row.id);
+    const itemsByExpense = new Map();
+    if (expenseIds.length > 0) {
+      const itemsRes = await pool.query(
+        `SELECT id, expense_record_id, supply_id, product_name_snapshot, quantity, unit_price_clp, total_clp
+         FROM expense_record_items
+         WHERE expense_record_id = ANY($1::uuid[])
+         ORDER BY created_at ASC`,
+        [expenseIds]
+      );
+      for (const item of itemsRes.rows) {
+        if (!itemsByExpense.has(item.expense_record_id)) itemsByExpense.set(item.expense_record_id, []);
+        itemsByExpense.get(item.expense_record_id).push(item);
+      }
+    }
+
+    const items = r.rows.map((row) => ({ ...row, items: itemsByExpense.get(row.id) || [] }));
     const total = r.rows.reduce((s, row) => s + (row.amount_clp || 0), 0);
-    res.json({ ok: true, items: r.rows, total_clp: total });
+    res.json({ ok: true, items, total_clp: total });
   } catch (e) {
     console.error("[supplies/expenses GET]", e);
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
@@ -125,28 +143,85 @@ router.get("/expenses", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req,
 });
 
 router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
+  const itemSchema = z.object({
+    supply_id: z.string().uuid(),
+    product_name: z.string().min(1).max(200),
+    quantity: z.number().positive(),
+    unit_price_clp: z.number().int().nonnegative(),
+    total_clp: z.number().int().nonnegative(),
+  });
   const schema = z.object({
     description: z.string().min(1).max(300),
-    amount_clp: z.number().int().positive(),
+    amount_clp: z.number().int().positive().optional().nullable(),
     expense_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     supply_id: z.string().uuid().optional().nullable(),
+    provider_id: z.string().uuid().optional().nullable(),
     notes: z.string().max(500).optional().nullable(),
+    items: z.array(itemSchema).min(1).max(200).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
+  const d = parsed.data;
+  const hasItems = !!d.items && d.items.length > 0;
+  // El total_clp de cada línea se recalcula acá en vez de confiar en el que manda el cliente.
+  const items = hasItems ? d.items.map((item) => ({ ...item, total_clp: Math.round(item.quantity * item.unit_price_clp) })) : [];
+  const amount = hasItems ? items.reduce((s, i) => s + i.total_clp, 0) : d.amount_clp;
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ ok: false, error: "Debes ingresar un monto o al menos un producto en el detalle" });
+  }
+
+  const pool = getPool();
+  let client;
   try {
-    const pool = getPool();
-    const d = parsed.data;
-    const r = await pool.query(
-      `INSERT INTO expense_records (id, description, amount_clp, expense_date, supply_id, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+    client = await pool.connect();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+  try {
+    await client.query("BEGIN");
+
+    const id = crypto.randomUUID();
+    const expenseDate = d.expense_date || new Date().toISOString().split("T")[0];
+    const r = await client.query(
+      `INSERT INTO expense_records (id, description, amount_clp, expense_date, supply_id, provider_id, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [crypto.randomUUID(), d.description, d.amount_clp, d.expense_date || new Date().toISOString().split("T")[0], d.supply_id ?? null, d.notes ?? null]
+      [id, d.description, amount, expenseDate, hasItems ? null : (d.supply_id ?? null), d.provider_id ?? null, d.notes ?? null]
     );
+
+    if (hasItems) {
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO expense_record_items (id, expense_record_id, supply_id, product_name_snapshot, quantity, unit_price_clp, total_clp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [crypto.randomUUID(), id, item.supply_id, item.product_name, item.quantity, item.unit_price_clp, item.total_clp]
+        );
+        // Solo actualiza el "último precio" si esta boleta es igual o más reciente que
+        // el último precio ya registrado, para que un gasto retroactivo no pise un precio más nuevo.
+        await client.query(
+          `UPDATE supplies SET last_price_clp=$1, last_updated=$3::timestamptz
+           WHERE id=$2 AND (last_updated IS NULL OR last_updated <= $3::timestamptz)`,
+          [item.unit_price_clp, item.supply_id, expenseDate]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
     res.json({ ok: true, expense: r.rows[0] });
   } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("Rollback failed:", rollbackErr.message);
+    }
+    if (e?.code === "23503") {
+      return res.status(400).json({ ok: false, error: "El insumo o proveedor seleccionado ya no existe" });
+    }
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  } finally {
+    client.release();
   }
 });
 
