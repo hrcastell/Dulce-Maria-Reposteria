@@ -62,6 +62,19 @@
       <p v-if="loadingCustomers" class="text-xs text-warm-400 mt-2 ml-1">Cargando clientes...</p>
     </div>
 
+    <!-- Order Date -->
+    <div class="bg-white p-5 rounded-2xl border border-warm-100 shadow-sm">
+      <label class="block text-sm font-semibold text-warm-700 mb-2">Fecha de la Orden *</label>
+      <input
+        type="date"
+        v-model="form.orderDate"
+        :max="todayStr"
+        required
+        class="block w-full sm:w-56 px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white"
+      >
+      <p class="text-xs text-warm-400 mt-1.5">Por defecto es hoy. Cambiala si estás registrando una venta de un día anterior.</p>
+    </div>
+
     <!-- Items -->
     <div class="space-y-4">
       <div class="flex items-center justify-between">
@@ -69,108 +82,33 @@
         <button
           type="button"
           class="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
-          @click="addItem"
+          @click="openAddItemModal"
         >
           + Agregar producto
         </button>
       </div>
 
-      <div class="space-y-4">
-        <div 
-          v-for="(item, index) in form.items" 
-          :key="index" 
-          class="bg-white p-4 rounded-2xl border border-warm-100 shadow-sm relative group"
+      <div v-if="form.items.length === 0" class="text-center py-8 bg-warm-50 rounded-2xl border border-dashed border-warm-200 text-sm text-warm-500">
+        Aún no has agregado productos
+      </div>
+
+      <div v-else class="space-y-2">
+        <div
+          v-for="(item, index) in form.items"
+          :key="index"
+          class="flex items-center justify-between gap-3 bg-white px-4 py-3 rounded-xl border border-warm-100 shadow-sm"
         >
-          <!-- Delete button -->
-          <button
-            type="button"
-            class="absolute top-4 right-4 text-warm-300 hover:text-error-500 transition-colors"
-            @click="removeItem(index)"
-            v-if="form.items.length > 1"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-          </button>
-
-          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start pr-8">
-            <!-- Product Select -->
-            <div class="sm:col-span-5">
-              <label class="block text-xs font-medium text-warm-500 mb-1">Producto</label>
-              <select 
-                v-model="item.productId" 
-                required 
-                class="block w-full px-3 py-2 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
-                @change="onProductChange(item)"
-              >
-                <option value="">Seleccionar...</option>
-                <option
-                  v-for="product in availableProducts"
-                  :key="product.id"
-                  :value="product.id"
-                  :disabled="!product.is_active"
-                >
-                  {{ product.name }}
-                </option>
-              </select>
-            </div>
-
-            <!-- Variant Select -->
-            <div class="sm:col-span-4">
-              <label class="block text-xs font-medium text-warm-500 mb-1">Variante</label>
-              <select 
-                v-model="item.variantId" 
-                class="block w-full px-3 py-2 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:bg-warm-50 disabled:text-warm-400"
-                :disabled="!item._variants || item._variants.length === 0"
-              >
-                <option value="">{{ item._variants?.length ? 'Seleccionar...' : 'N/A' }}</option>
-                <option 
-                  v-for="v in item._variants" 
-                  :key="v.id" 
-                  :value="v.id"
-                  :disabled="!v.is_active || v.stock_qty <= 0"
-                >
-                  {{ v.name }} (${{ formatPrice(v.price_override_clp || item._basePrice) }}) - Stock: {{ v.stock_qty }}
-                </option>
-              </select>
-            </div>
-
-            <!-- Qty -->
-            <div class="sm:col-span-2">
-              <label class="block text-xs font-medium text-warm-500 mb-1">Cant.</label>
-              <input
-                v-model.number="item.qty"
-                type="number"
-                min="1"
-                required
-                class="block w-full px-3 py-2 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
-              >
-            </div>
-            
-            <!-- Line Total (Visual) -->
-             <div class="sm:col-span-1 pt-6 text-right sm:text-center text-sm font-semibold text-warm-700">
-                ${{ formatPrice(calculateLineTotal(item)) }}
-             </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-warm-800 truncate">{{ itemSummaryText(item) }}</p>
+            <p class="text-xs text-warm-400">${{ formatPrice(calculateLineTotal(item)) }}</p>
           </div>
-
-          <!-- Toppings -->
-          <div v-if="item._toppings && item._toppings.length > 0" class="mt-4 pt-3 border-t border-warm-50">
-            <p class="text-xs font-medium text-warm-500 mb-2">Toppings / Adicionales:</p>
-            <div class="flex flex-wrap gap-3">
-              <label 
-                v-for="t in item._toppings" 
-                :key="t.id"
-                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
-                :class="item.toppings.includes(t.id) ? 'bg-primary-50 border-primary-200 text-primary-800' : 'bg-white border-warm-200 text-warm-600 hover:bg-warm-50'"
-              >
-                <input 
-                  type="checkbox" 
-                  :value="t.id" 
-                  v-model="item.toppings"
-                  class="rounded text-primary-500 focus:ring-primary-400 border-warm-300"
-                >
-                <span>{{ t.name }}</span>
-                <span v-if="t.price_clp > 0" class="text-xs font-semibold ml-1">+${{ formatPrice(t.price_clp) }}</span>
-              </label>
-            </div>
+          <div class="flex items-center gap-1 flex-shrink-0">
+            <button type="button" class="p-2 text-warm-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" aria-label="Editar" @click="openEditItemModal(index)">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            </button>
+            <button type="button" class="p-2 text-warm-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors" aria-label="Eliminar" @click="removeItem(index)">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -181,44 +119,40 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <!-- Payment & Delivery -->
         <div class="space-y-4">
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Pago</label>
-              <select v-model="form.paymentMethod" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white">
-                <option value="TRANSFER">Transferencia</option>
-                <option value="CASH">Efectivo</option>
-                <option value="ONLINE">Online</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Estado</label>
-              <select v-model="form.paymentStatus" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white">
-                <option value="PENDING">Pendiente</option>
-                <option value="PAID">Pagado</option>
-              </select>
-            </div>
+          <div>
+            <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Pago</label>
+            <select v-model="form.paymentMethod" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white">
+              <option value="TRANSFER">Transferencia</option>
+              <option value="CASH">Efectivo</option>
+              <option value="ONLINE">Online</option>
+            </select>
           </div>
-          
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Entrega</label>
-              <select v-model="form.deliveryMethod" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white" @change="updateDeliveryFee">
-                <option value="PICKUP">Retiro</option>
-                <option value="DELIVERY">Delivery</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Costo Delivery</label>
-              <div class="relative">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400 text-sm">$</span>
-                <input
-                  v-model.number="form.deliveryFeeClp"
-                  type="number"
-                  min="0"
-                  class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white pl-6"
-                  :disabled="form.deliveryMethod === 'PICKUP'"
-                >
-              </div>
+          <div>
+            <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Estado</label>
+            <select v-model="form.paymentStatus" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white">
+              <option value="PENDING">Pendiente</option>
+              <option value="PAID">Pagado</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Entrega</label>
+            <select v-model="form.deliveryMethod" class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white" @change="updateDeliveryFee">
+              <option value="PICKUP">Retiro</option>
+              <option value="DELIVERY">Delivery</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-warm-700 mb-1.5 uppercase tracking-wide">Costo Delivery</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400 text-sm">$</span>
+              <input
+                v-model.number="form.deliveryFeeClp"
+                type="number"
+                min="0"
+                class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white pl-6"
+                :disabled="form.deliveryMethod === 'PICKUP'"
+              >
             </div>
           </div>
         </div>
@@ -300,6 +234,81 @@
         </button>
       </div>
     </Modal>
+
+    <Modal
+      v-model="showItemModal"
+      :title="editingItemIndex === null ? 'Agregar Producto' : 'Editar Producto'"
+      submit-text="Aceptar"
+      @submit="confirmItemModal"
+    >
+      <div class="space-y-4">
+        <div v-if="itemModalError" class="rounded-xl bg-error-50 p-3 border border-error-100 text-sm text-error-700">
+          {{ itemModalError }}
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-warm-500 mb-1">Producto</label>
+          <div class="relative">
+            <input
+              type="text"
+              v-model="draftItem._productSearch"
+              placeholder="Buscar producto..."
+              class="block w-full pl-3 pr-8 py-2.5 border border-warm-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+              @focus="draftItem._showProductDropdown = true"
+              @input="draftItem._showProductDropdown = true"
+              @blur="draftItem._showProductDropdown = false"
+            />
+            <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-warm-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+            <div v-if="draftItem._showProductDropdown && filteredProductsFor(draftItem).length > 0" class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+              <div v-for="p in filteredProductsFor(draftItem)" :key="p.id" class="px-4 py-2 hover:bg-primary-50 cursor-pointer transition-colors text-sm border-b border-warm-50 last:border-0" @mousedown.prevent="selectProduct(draftItem, p)">
+                <div class="font-medium text-warm-800">{{ p.name }}</div>
+                <div class="text-xs text-warm-500">${{ formatPrice(p.price_clp) }} · Stock: {{ p.stock_qty }}</div>
+              </div>
+            </div>
+            <div v-else-if="draftItem._showProductDropdown && draftItem._productSearch" class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg p-3 text-center text-xs text-warm-500">
+              No se encontraron productos
+            </div>
+          </div>
+          <div v-if="draftItem.productId" class="mt-2 flex items-center gap-2 text-xs text-primary-700 bg-primary-50 px-2 py-1 rounded-lg inline-block">
+            <span class="font-bold">✓</span> {{ selectedProductName(draftItem) }}
+            <button type="button" class="ml-1 text-primary-400 hover:text-primary-600 font-bold" @click="clearProductSelection(draftItem)">×</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-warm-500 mb-1">Variante</label>
+          <select v-model="draftItem.variantId" class="block w-full px-3 py-2.5 border border-warm-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:bg-warm-50 disabled:text-warm-400" :disabled="!draftItem._variants || draftItem._variants.length === 0">
+            <option value="">{{ draftItem._variants?.length ? 'Seleccionar...' : 'N/A' }}</option>
+            <option v-for="v in draftItem._variants" :key="v.id" :value="v.id" :disabled="!v.is_active || v.stock_qty <= 0">
+              {{ v.name }} (${{ formatPrice(v.price_override_clp || draftItem._basePrice) }}) - Stock: {{ v.stock_qty }}
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-warm-500 mb-1">Cantidad</label>
+          <input v-model.number="draftItem.qty" type="number" min="1" class="block w-full px-3 py-2.5 border border-warm-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400">
+        </div>
+
+        <div v-if="draftItem._toppings && draftItem._toppings.length > 0">
+          <p class="text-xs font-medium text-warm-500 mb-2">Toppings / Adicionales</p>
+          <div class="flex flex-wrap gap-2">
+            <label v-for="t in draftItem._toppings" :key="t.id" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors" :class="draftItem.toppings.includes(t.id) ? 'bg-primary-50 border-primary-200 text-primary-800' : 'bg-white border-warm-200 text-warm-600 hover:bg-warm-50'">
+              <input type="checkbox" :value="t.id" v-model="draftItem.toppings" class="rounded text-primary-500 focus:ring-primary-400 border-warm-300">
+              <span>{{ t.name }}</span>
+              <span v-if="t.price_clp > 0" class="text-xs font-semibold ml-1">+${{ formatPrice(t.price_clp) }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="draftItem.productId" class="flex justify-between items-center pt-3 border-t border-warm-100 text-sm">
+          <span class="text-warm-500">Total línea:</span>
+          <span class="font-bold text-warm-800">${{ formatPrice(calculateLineTotal(draftItem)) }}</span>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -344,6 +353,8 @@ interface OrderItem {
   _variants?: Variant[]
   _toppings?: Topping[]
   _basePrice: number
+  _productSearch?: string
+  _showProductDropdown?: boolean
 }
 
 interface Customer {
@@ -353,9 +364,16 @@ interface Customer {
   email?: string
 }
 
+const createEmptyItem = (): OrderItem => ({
+  productId: '', variantId: '', toppings: [], qty: 1, _basePrice: 0, _productSearch: '', _showProductDropdown: false
+})
+
+const todayStr = new Date().toISOString().split('T')[0]
+
 const form = ref({
   customerId: '',
-  items: [{ productId: '', variantId: '', toppings: [], qty: 1, _basePrice: 0 }] as OrderItem[],
+  orderDate: todayStr,
+  items: [] as OrderItem[],
   paymentMethod: 'TRANSFER',
   paymentStatus: 'PAID',
   deliveryMethod: 'PICKUP',
@@ -375,7 +393,10 @@ const showNewCustomerModal = ref(false)
 const creatingCustomer = ref(false)
 const customerFormRef = ref<any>(null)
 
-const availableProducts = computed(() => products.value)
+const showItemModal = ref(false)
+const editingItemIndex = ref<number | null>(null)
+const draftItem = ref<OrderItem>(createEmptyItem())
+const itemModalError = ref('')
 
 // Helpers
 const formatPrice = (price: number) => new Intl.NumberFormat('es-CL').format(Math.round(price || 0))
@@ -414,14 +435,8 @@ const calculatedTotal = computed(() => {
 })
 
 // Actions
-const addItem = () => {
-  form.value.items.push({ productId: '', variantId: '', toppings: [], qty: 1, _basePrice: 0 })
-}
-
 const removeItem = (index: number) => {
-  if (form.value.items.length > 1) {
-    form.value.items.splice(index, 1)
-  }
+  form.value.items.splice(index, 1)
 }
 
 const updateDeliveryFee = () => {
@@ -455,6 +470,83 @@ const onProductChange = async (item: OrderItem) => {
   } catch (e) {
     console.error('Error fetching details for product', item.productId, e)
   }
+}
+
+const filteredProductsFor = (item: OrderItem) => {
+  const pool = products.value.filter(p => p.is_active && p.stock_qty > 0)
+  if (!item._productSearch) return pool.slice(0, 10)
+  const lower = item._productSearch.toLowerCase()
+  return pool.filter(p => p.name.toLowerCase().includes(lower)).slice(0, 10)
+}
+
+const selectedProductName = (item: OrderItem) =>
+  products.value.find(p => p.id === item.productId)?.name || ''
+
+const selectProduct = (item: OrderItem, product: Product) => {
+  item.productId = product.id
+  item._productSearch = ''
+  item._showProductDropdown = false
+  onProductChange(item)
+}
+
+const clearProductSelection = (item: OrderItem) => {
+  item.productId = ''
+  item._productSearch = ''
+  item.variantId = ''
+  item._variants = []
+  item._toppings = []
+  item._basePrice = 0
+}
+
+const openAddItemModal = () => {
+  editingItemIndex.value = null
+  draftItem.value = createEmptyItem()
+  itemModalError.value = ''
+  showItemModal.value = true
+}
+
+const openEditItemModal = (index: number) => {
+  editingItemIndex.value = index
+  const original = form.value.items[index]
+  // OJO: clonar `toppings` con spread es OBLIGATORIO. v-model de checkboxes
+  // muta el array in-place; sin este clon, tocar un checkbox en el modal
+  // mutaría el item original ANTES de confirmar, y "Cancelar" no revertiría nada.
+  draftItem.value = { ...original, toppings: [...original.toppings] }
+  itemModalError.value = ''
+  showItemModal.value = true
+}
+
+const confirmItemModal = () => {
+  if (!draftItem.value.productId) {
+    itemModalError.value = 'Debes seleccionar un producto'
+    return
+  }
+  if (draftItem.value._variants && draftItem.value._variants.length > 0 && !draftItem.value.variantId) {
+    itemModalError.value = 'Debes seleccionar una variante'
+    return
+  }
+  if (!draftItem.value.qty || draftItem.value.qty < 1) {
+    itemModalError.value = 'La cantidad debe ser al menos 1'
+    return
+  }
+  itemModalError.value = ''
+  if (editingItemIndex.value === null) {
+    form.value.items.push(draftItem.value)
+  } else {
+    form.value.items[editingItemIndex.value] = draftItem.value
+  }
+  showItemModal.value = false
+}
+
+const itemSummaryText = (item: OrderItem) => {
+  const name = selectedProductName(item) || 'Producto'
+  const variant = item._variants?.find(v => v.id === item.variantId)
+  const toppingNames = (item._toppings || []).filter(t => item.toppings.includes(t.id)).map(t => t.name)
+  let text = name
+  if (variant) text += ` — ${variant.name}`
+  text += ` x${item.qty}`
+  if (toppingNames.length > 0) text += ` (+ ${toppingNames.join(', ')})`
+  return text
 }
 
 const loadCustomers = async () => {
@@ -556,6 +648,7 @@ const submit = () => {
     // Transform to payload matching API
     const payload = {
       customerId: form.value.customerId,
+      orderDate: form.value.orderDate,
       items: form.value.items.map(i => ({
         productId: i.productId,
         qty: i.qty,

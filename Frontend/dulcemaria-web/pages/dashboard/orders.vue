@@ -200,15 +200,15 @@
       </div>
     </div>
 
-    <!-- Create Order Modal -->
-    <Modal
+    <!-- Create Order Panel -->
+    <SidePanel
       v-model="showCreateModal"
       title="Nueva Orden"
       :loading="saving"
       @submit="handleCreateOrder"
     >
       <OrderForm ref="orderFormRef" @submit="handleSubmitOrder" />
-    </Modal>
+    </SidePanel>
 
     <!-- Update Order Status Modal -->
     <Modal

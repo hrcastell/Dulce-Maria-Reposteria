@@ -41,7 +41,8 @@
             @input="debouncedSearch"
           >
         </div>
-        <button 
+        <button
+          v-if="canWrite"
           @click="openSupplyModal()"
           class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft"
         >
@@ -95,7 +96,8 @@
                       <span v-else class="text-xs text-warm-400">Sin precio</span>
                     </td>
                     <td class="px-4 py-3 text-right">
-                      <button class="text-primary-600 hover:text-primary-700 text-sm font-medium" @click="openSupplyModal(s)">Editar</button>
+                      <button v-if="canWrite" class="text-primary-600 hover:text-primary-700 text-sm font-medium" @click="openSupplyModal(s)">Editar</button>
+                      <span v-else class="text-warm-300 text-sm">—</span>
                     </td>
                   </tr>
                 </tbody>
@@ -132,8 +134,8 @@
                       </div>
                     </div>
 
-                    <div class="flex items-center gap-2 mt-3 pt-3 border-t border-warm-100">
-                      <button 
+                    <div v-if="canWrite" class="flex items-center gap-2 mt-3 pt-3 border-t border-warm-100">
+                      <button
                         class="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
                         @click="openSupplyModal(s)"
                       >
@@ -172,22 +174,151 @@
           </div>
 
           <!-- Add expense form -->
-          <div class="card mb-4">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Registrar gasto</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <input v-model="newExpense.description" type="text" placeholder="Descripción *" class="input sm:col-span-2">
-              <input v-model.number="newExpense.amount_clp" type="number" min="1" placeholder="Monto CLP *" class="input">
+          <div v-if="!canWrite" class="bg-warm-50 rounded-2xl border border-dashed border-warm-200 p-5 mb-4 text-center text-sm text-warm-500">
+            No tenés permisos para registrar gastos. Consultá a un administrador.
+          </div>
+          <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 mb-4">
+            <h3 class="text-lg font-semibold text-warm-800 mb-4">Registrar Gasto</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input v-model="newExpense.description" type="text" placeholder="Descripción / N° boleta *" class="input sm:col-span-2">
               <input v-model="newExpense.expense_date" type="date" class="input">
-              <select v-model="newExpense.supply_id" class="input sm:col-span-2">
+            </div>
+
+            <!-- Proveedor: buscador + creación/eliminación inline -->
+            <div class="mt-3">
+              <label class="block text-xs font-medium text-warm-500 mb-1">Proveedor (opcional)</label>
+              <div class="relative max-w-md">
+                <input
+                  type="text"
+                  v-model="providerSearch"
+                  placeholder="Buscar proveedor..."
+                  class="block w-full pl-3 pr-8 py-2.5 border border-warm-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                  @focus="onProviderSearchInput()"
+                  @input="onProviderSearchInput()"
+                  @blur="showProviderDropdown = false"
+                >
+                <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-warm-400">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+
+                <div
+                  v-if="showProviderDropdown && !showCreateProvider && providerResults.length > 0"
+                  class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                >
+                  <div v-for="p in providerResults" :key="p.id" class="flex items-center justify-between px-2 py-1 hover:bg-primary-50 transition-colors text-sm border-b border-warm-50 last:border-0">
+                    <button type="button" class="flex-1 text-left px-2 py-1 font-medium text-warm-800" @mousedown.prevent="selectProvider(p)">
+                      {{ p.name }}
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="deletingProviderId === p.id"
+                      class="p-1.5 text-warm-300 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
+                      aria-label="Eliminar proveedor"
+                      @mousedown.prevent="deleteProvider(p)"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-else-if="showProviderDropdown && !showCreateProvider && providerSearch"
+                  class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg p-3"
+                >
+                  <p class="text-center text-xs text-warm-500 mb-2">No se encontró "{{ providerSearch }}"</p>
+                  <button
+                    type="button"
+                    class="w-full text-center text-sm font-medium text-primary-600 hover:text-primary-700 py-1"
+                    @mousedown.prevent="showCreateProvider = true"
+                  >
+                    + Crear proveedor "{{ providerSearch }}"
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="newExpense.provider_id" class="mt-2 flex items-center gap-2 text-xs text-primary-700 bg-primary-50 px-2 py-1 rounded-lg inline-block">
+                <span class="font-bold">✓</span> {{ newExpense.provider_name }}
+                <button type="button" class="ml-1 text-primary-400 hover:text-primary-600 font-bold" @click="clearProviderSelection">×</button>
+              </div>
+
+              <div v-if="showCreateProvider" class="mt-2 max-w-md p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
+                <p class="text-xs text-warm-600">Nuevo proveedor: <span class="font-semibold">{{ providerSearch }}</span></p>
+                <div class="flex gap-2">
+                  <button type="button" :disabled="creatingProvider" class="btn-primary text-sm flex-1 disabled:opacity-50" @click="createProvider">
+                    {{ creatingProvider ? 'Creando...' : 'Crear y usar' }}
+                  </button>
+                  <button type="button" class="btn-secondary text-sm" @click="showCreateProvider = false">Cancelar</button>
+                </div>
+              </div>
+              <p v-if="providerError" class="mt-1 text-xs text-error-600">{{ providerError }}</p>
+            </div>
+
+            <!-- Simple mode: solo aparece si no hay detalle cargado -->
+            <div v-if="newExpense.items.length === 0" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+              <input v-model.number="newExpense.amount_clp" type="number" min="1" placeholder="Monto CLP *" class="input">
+              <select v-model="newExpense.supply_id" class="input">
                 <option value="">Sin insumo asociado</option>
-                <option v-for="s in supplies" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option v-for="s in allSupplies" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
               <input v-model="newExpense.notes" type="text" placeholder="Notas (opcional)" class="input">
-              <button :disabled="expenseSaving" class="btn-primary text-sm disabled:opacity-50" @click="addExpense">
-                {{ expenseSaving ? 'Guardando...' : '+ Agregar' }}
+            </div>
+            <div v-else class="mt-3">
+              <input v-model="newExpense.notes" type="text" placeholder="Notas (opcional)" class="input">
+            </div>
+
+            <!-- Detalle de la boleta/factura -->
+            <div class="mt-4 pt-4 border-t border-warm-100">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-semibold text-warm-700">Detalle de productos (opcional)</h4>
+                <button type="button" class="text-sm font-medium text-primary-600 hover:text-primary-700" @click="openAddExpenseItemModal">
+                  + Agregar producto
+                </button>
+              </div>
+
+              <div v-if="newExpense.items.length === 0" class="text-center py-4 bg-warm-50 rounded-xl border border-dashed border-warm-200 text-xs text-warm-500">
+                Sin productos en el detalle. El monto se ingresa manualmente arriba.
+              </div>
+
+              <div v-else class="space-y-2">
+                <div v-for="(item, index) in newExpense.items" :key="item._key" class="flex items-center justify-between gap-3 bg-warm-50 px-3 py-2.5 rounded-xl border border-warm-100">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-warm-800 truncate">{{ item.product_name }}</p>
+                    <p class="text-xs text-warm-500">{{ item.quantity }} x ${{ formatPrice(item.unit_price_clp) }}</p>
+                  </div>
+                  <p class="text-sm font-semibold text-warm-800 flex-shrink-0">${{ formatPrice(item.total_clp) }}</p>
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <button type="button" class="p-1.5 text-warm-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" aria-label="Editar" @click="openEditExpenseItemModal(index)">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>
+                    <button type="button" class="p-1.5 text-warm-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors" aria-label="Eliminar" @click="removeExpenseItem(index)">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Desglose IVA -->
+                <div class="bg-primary-50 rounded-xl p-3 space-y-1 mt-2">
+                  <div class="flex justify-between text-xs text-warm-600">
+                    <span>Subtotal neto:</span>
+                    <span>${{ formatPrice(expenseIvaBreakdown.net) }}</span>
+                  </div>
+                  <div class="flex justify-between text-xs text-warm-600">
+                    <span>IVA (19%):</span>
+                    <span>${{ formatPrice(expenseIvaBreakdown.iva) }}</span>
+                  </div>
+                  <div class="flex justify-between text-sm font-bold text-warm-800 pt-1 border-t border-primary-100">
+                    <span>Total boleta/factura:</span>
+                    <span>${{ formatPrice(expenseIvaBreakdown.total) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 flex justify-end">
+              <button :disabled="expenseSaving" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft disabled:opacity-50" @click="addExpense">
+                {{ expenseSaving ? 'Guardando...' : '+ Registrar Gasto' }}
               </button>
             </div>
-            <div v-if="expenseError" class="mt-2 text-sm text-red-600">{{ expenseError }}</div>
+            <div v-if="expenseError" class="mt-2 text-sm text-error-600">{{ expenseError }}</div>
           </div>
 
           <!-- Expenses list -->
@@ -217,11 +348,15 @@
                     <td class="px-4 py-3">
                       <div class="text-sm text-warm-800">{{ e.description }}</div>
                       <div v-if="e.notes" class="text-xs text-warm-400">{{ e.notes }}</div>
+                      <div v-if="e.provider_name" class="text-xs text-warm-500 mt-0.5">🏢 {{ e.provider_name }}</div>
+                      <div v-if="e.items && e.items.length > 0" class="text-xs text-primary-600 mt-0.5">
+                        🧾 {{ e.items.map((i) => i.product_name_snapshot).join(', ') }}
+                      </div>
                     </td>
-                    <td class="px-4 py-3 text-sm text-warm-500">{{ e.supply_name || '—' }}</td>
+                    <td class="px-4 py-3 text-sm text-warm-500">{{ e.supply_name || (e.items && e.items.length > 0 ? `${e.items.length} productos` : '—') }}</td>
                     <td class="px-4 py-3 text-sm font-semibold text-error-500">${{ formatPrice(e.amount_clp) }}</td>
                     <td class="px-4 py-3 text-right">
-                      <button class="text-error-400 hover:text-error-600 text-lg leading-none" @click="deleteExpense(e.id)">×</button>
+                      <button v-if="canWrite" class="text-error-400 hover:text-error-600 text-lg leading-none" @click="deleteExpense(e.id)">×</button>
                     </td>
                   </tr>
                 </tbody>
@@ -245,10 +380,14 @@
                     </div>
                     <h3 class="font-medium text-warm-800 mt-2 truncate">{{ e.description }}</h3>
                     <p v-if="e.notes" class="text-xs text-warm-400 truncate">{{ e.notes }}</p>
+                    <p v-if="e.provider_name" class="text-xs text-warm-500 mt-1 truncate">🏢 {{ e.provider_name }}</p>
                     <p v-if="e.supply_name" class="text-xs text-primary-600 mt-1 truncate">📦 {{ e.supply_name }}</p>
+                    <p v-if="e.items && e.items.length > 0" class="text-xs text-primary-600 mt-1 truncate">
+                      🧾 {{ e.items.map((i) => i.product_name_snapshot).join(', ') }}
+                    </p>
                     
-                    <div class="flex items-center gap-2 mt-3 pt-3 border-t border-warm-100">
-                      <button 
+                    <div v-if="canWrite" class="flex items-center gap-2 mt-3 pt-3 border-t border-warm-100">
+                      <button
                         class="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-error-600 bg-error-50 hover:bg-error-100 rounded-lg transition-colors"
                         @click="deleteExpense(e.id)"
                       >
@@ -294,6 +433,104 @@
         <div v-if="supplyFormError" class="text-sm text-red-600 bg-red-50 rounded p-2">{{ supplyFormError }}</div>
       </div>
     </Modal>
+
+    <!-- Expense Item Modal -->
+    <Modal
+      v-model="showExpenseItemModal"
+      :title="editingExpenseItemIndex === null ? 'Agregar Producto al Detalle' : 'Editar Producto'"
+      submit-text="Aceptar"
+      @submit="confirmExpenseItemModal"
+    >
+      <div class="space-y-4">
+        <div v-if="expenseItemModalError" class="rounded-xl bg-error-50 p-3 border border-error-100 text-sm text-error-700">
+          {{ expenseItemModalError }}
+        </div>
+
+        <div>
+          <label class="label">Producto (Insumo) *</label>
+          <div class="relative">
+            <input
+              type="text"
+              v-model="draftExpenseItem._supplySearch"
+              placeholder="Buscar insumo..."
+              class="block w-full pl-3 pr-8 py-2.5 border border-warm-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+              @focus="onSupplySearchInput(draftExpenseItem)"
+              @input="onSupplySearchInput(draftExpenseItem)"
+              @blur="draftExpenseItem._showSupplyDropdown = false"
+            >
+            <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-warm-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+
+            <div
+              v-if="draftExpenseItem._showSupplyDropdown && !draftExpenseItem._showCreateSupply && filteredSuppliesFor(draftExpenseItem).length > 0"
+              class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"
+            >
+              <div
+                v-for="s in filteredSuppliesFor(draftExpenseItem)"
+                :key="s.id"
+                class="px-4 py-2 hover:bg-primary-50 cursor-pointer transition-colors text-sm border-b border-warm-50 last:border-0"
+                @mousedown.prevent="selectSupplyForItem(draftExpenseItem, s)"
+              >
+                <div class="font-medium text-warm-800">{{ s.name }}</div>
+                <div class="text-xs text-warm-500">{{ s.unit || 'Sin unidad' }} · {{ s.last_price_clp ? `$${formatPrice(s.last_price_clp)}` : 'Sin precio' }}</div>
+              </div>
+            </div>
+            <div
+              v-else-if="draftExpenseItem._showSupplyDropdown && !draftExpenseItem._showCreateSupply && draftExpenseItem._supplySearch"
+              class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg p-3"
+            >
+              <p class="text-center text-xs text-warm-500 mb-2">No se encontró "{{ draftExpenseItem._supplySearch }}"</p>
+              <button
+                type="button"
+                class="w-full text-center text-sm font-medium text-primary-600 hover:text-primary-700 py-1"
+                @mousedown.prevent="draftExpenseItem._showCreateSupply = true"
+              >
+                + Crear insumo "{{ draftExpenseItem._supplySearch }}"
+              </button>
+            </div>
+          </div>
+
+          <div v-if="draftExpenseItem.supply_id" class="mt-2 flex items-center gap-2 text-xs text-primary-700 bg-primary-50 px-2 py-1 rounded-lg inline-block">
+            <span class="font-bold">✓</span> {{ draftExpenseItem.product_name }}
+            <button type="button" class="ml-1 text-primary-400 hover:text-primary-600 font-bold" @click="clearSupplySelection(draftExpenseItem)">×</button>
+          </div>
+
+          <!-- Creación inline de insumo -->
+          <div v-if="draftExpenseItem._showCreateSupply" class="mt-2 p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
+            <p class="text-xs text-warm-600">Nuevo insumo: <span class="font-semibold">{{ draftExpenseItem._supplySearch }}</span></p>
+            <input v-model="draftExpenseItem._createUnit" type="text" placeholder="Unidad (kg, lt, unidad...)" class="input text-sm">
+            <div class="flex gap-2">
+              <button
+                type="button"
+                :disabled="draftExpenseItem._creatingSupply"
+                class="btn-primary text-sm flex-1 disabled:opacity-50"
+                @click="createSupplyForItem(draftExpenseItem)"
+              >
+                {{ draftExpenseItem._creatingSupply ? 'Creando...' : 'Crear y usar' }}
+              </button>
+              <button type="button" class="btn-secondary text-sm" @click="draftExpenseItem._showCreateSupply = false">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="label">Cantidad *</label>
+            <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
+          </div>
+          <div>
+            <label class="label">Precio Unitario (CLP, c/IVA) *</label>
+            <input v-model.number="draftExpenseItem.unit_price_clp" type="number" min="0" class="input">
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center pt-3 border-t border-warm-100 text-sm">
+          <span class="text-warm-500">Total línea:</span>
+          <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -309,8 +546,16 @@ useHead({ title: 'Insumos y Gastos | Dulce María' })
 
 const tab = ref<'supplies' | 'expenses'>('supplies')
 
+// El backend ya bloquea estas acciones para STAFF con 403; esto solo oculta
+// los controles que fallarían, en vez de dejar que el usuario los toque y falle.
+const currentUserRole = ref('')
+const canWrite = computed(() => currentUserRole.value !== 'STAFF')
+
 // ── Supplies ─────────────────────────────────────────────────────────────────
 const supplies = ref<any[]>([])
+// Catálogo completo, sin filtrar, para el <select> de insumo del modo simple de
+// gastos — no puede depender de `supplies`, que el buscador del tab Insumos acota.
+const allSupplies = ref<any[]>([])
 const suppliesLoading = ref(false)
 const suppliesError = ref('')
 const supplySearch = ref('')
@@ -358,6 +603,15 @@ const loadSupplies = async () => {
   }
 }
 
+const loadAllSupplies = async () => {
+  try {
+    const res = await api.get<{ ok: boolean; items: any[] }>('/admin/supplies')
+    if (res.ok) allSupplies.value = res.items
+  } catch (e: any) {
+    console.error('Error loading full supplies catalog:', e)
+  }
+}
+
 const openSupplyModal = (supply?: any) => {
   editingSupply.value = supply || null
   supplyFormError.value = ''
@@ -391,6 +645,7 @@ const saveSupply = async () => {
     }
     showSupplyModal.value = false
     await loadSupplies()
+    await loadAllSupplies()
   } catch (e: any) {
     supplyFormError.value = e?.data?.error || 'Error al guardar'
   } finally {
@@ -399,6 +654,45 @@ const saveSupply = async () => {
 }
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
+const IVA_RATE = 0.19
+
+interface ExpenseItem {
+  _key: string
+  supply_id: string
+  product_name: string
+  quantity: number
+  unit_price_clp: number
+  total_clp: number
+}
+
+interface DraftExpenseItem {
+  supply_id: string
+  product_name: string
+  quantity: number | null
+  unit_price_clp: number | null
+  _supplySearch: string
+  _searchResults: any[]
+  _searchSeq: number
+  _showSupplyDropdown: boolean
+  _showCreateSupply: boolean
+  _createUnit: string
+  _creatingSupply: boolean
+}
+
+const createEmptyExpenseItem = (): DraftExpenseItem => ({
+  supply_id: '',
+  product_name: '',
+  quantity: 1,
+  unit_price_clp: null,
+  _supplySearch: '',
+  _searchResults: [],
+  _searchSeq: 0,
+  _showSupplyDropdown: false,
+  _showCreateSupply: false,
+  _createUnit: '',
+  _creatingSupply: false,
+})
+
 const expenses = ref<any[]>([])
 const expensesTotal = ref(0)
 const expensesLoading = ref(false)
@@ -406,7 +700,102 @@ const expYear = ref(now.getFullYear())
 const expMonth = ref(now.getMonth() + 1)
 const expenseSaving = ref(false)
 const expenseError = ref('')
-const newExpense = ref({ description: '', amount_clp: null as number | null, expense_date: now.toISOString().split('T')[0], supply_id: '', notes: '' })
+const newExpense = ref({
+  description: '',
+  amount_clp: null as number | null,
+  expense_date: now.toISOString().split('T')[0],
+  supply_id: '',
+  provider_id: '',
+  provider_name: '',
+  notes: '',
+  items: [] as ExpenseItem[],
+})
+
+const showExpenseItemModal = ref(false)
+const editingExpenseItemIndex = ref<number | null>(null)
+const draftExpenseItem = ref<DraftExpenseItem>(createEmptyExpenseItem())
+const expenseItemModalError = ref('')
+
+// ── Proveedores (buscador + creación/eliminación inline en el form de gasto) ──
+const providerSearch = ref('')
+const providerResults = ref<any[]>([])
+const showProviderDropdown = ref(false)
+const showCreateProvider = ref(false)
+const creatingProvider = ref(false)
+const deletingProviderId = ref<string | null>(null)
+const providerError = ref('')
+
+let providerSearchTimer: any = null
+let providerSearchSeq = 0
+const searchProviders = async () => {
+  const seq = ++providerSearchSeq
+  try {
+    const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/providers?q=${encodeURIComponent(providerSearch.value.trim())}`)
+    if (seq !== providerSearchSeq) return // llegó una respuesta vieja después de una búsqueda más nueva, se descarta
+    if (res.ok) providerResults.value = res.items
+  } catch (e) {
+    if (seq !== providerSearchSeq) return
+    providerResults.value = []
+  }
+}
+
+const onProviderSearchInput = () => {
+  showProviderDropdown.value = true
+  showCreateProvider.value = false
+  clearTimeout(providerSearchTimer)
+  providerSearchTimer = setTimeout(searchProviders, 250)
+}
+
+const selectProvider = (p: any) => {
+  newExpense.value.provider_id = p.id
+  newExpense.value.provider_name = p.name
+  providerSearch.value = ''
+  providerResults.value = []
+  showProviderDropdown.value = false
+  showCreateProvider.value = false
+}
+
+const clearProviderSelection = () => {
+  newExpense.value.provider_id = ''
+  newExpense.value.provider_name = ''
+}
+
+const createProvider = async () => {
+  const name = providerSearch.value.trim()
+  if (!name) return
+  creatingProvider.value = true
+  providerError.value = ''
+  try {
+    const res = await api.post<{ ok: boolean; provider: any }>('/admin/providers', { name })
+    if (res.ok) selectProvider(res.provider)
+  } catch (e: any) {
+    providerError.value = e?.data?.error || 'Error al crear proveedor'
+  } finally {
+    creatingProvider.value = false
+  }
+}
+
+const deleteProvider = async (p: any) => {
+  if (!confirm(`¿Eliminar el proveedor "${p.name}"?`)) return
+  deletingProviderId.value = p.id
+  providerError.value = ''
+  try {
+    await api.delete(`/admin/providers/${p.id}`)
+    providerResults.value = providerResults.value.filter((x) => x.id !== p.id)
+    if (newExpense.value.provider_id === p.id) clearProviderSelection()
+  } catch (e: any) {
+    providerError.value = e?.data?.error || 'Error al eliminar proveedor'
+  } finally {
+    deletingProviderId.value = null
+  }
+}
+
+const expenseItemsTotal = computed(() => newExpense.value.items.reduce((sum, it) => sum + it.total_clp, 0))
+const expenseIvaBreakdown = computed(() => {
+  const total = expenseItemsTotal.value
+  const net = Math.round(total / (1 + IVA_RATE))
+  return { net, iva: total - net, total }
+})
 
 const loadExpenses = async () => {
   expensesLoading.value = true
@@ -424,9 +813,133 @@ const loadExpenses = async () => {
   }
 }
 
+// Búsqueda propia (no reutiliza `supplies`, que puede venir acotado por el
+// buscador del tab Insumos) para que el picker del detalle siempre vea el catálogo completo.
+let expenseItemSearchTimer: any = null
+const searchSuppliesForItem = async (item: DraftExpenseItem) => {
+  const seq = ++item._searchSeq
+  try {
+    const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/supplies?q=${encodeURIComponent(item._supplySearch.trim())}`)
+    if (seq !== item._searchSeq) return // llegó una respuesta vieja después de una búsqueda más nueva, se descarta
+    if (res.ok) item._searchResults = res.items
+  } catch (e) {
+    if (seq !== item._searchSeq) return
+    item._searchResults = []
+  }
+}
+
+const onSupplySearchInput = (item: DraftExpenseItem) => {
+  item._showSupplyDropdown = true
+  item._showCreateSupply = false
+  clearTimeout(expenseItemSearchTimer)
+  expenseItemSearchTimer = setTimeout(() => searchSuppliesForItem(item), 250)
+}
+
+const filteredSuppliesFor = (item: DraftExpenseItem) => item._searchResults
+
+const selectSupplyForItem = (item: DraftExpenseItem, supply: any) => {
+  item.supply_id = supply.id
+  item.product_name = supply.name
+  item._supplySearch = ''
+  item._searchResults = []
+  item._showSupplyDropdown = false
+  item._showCreateSupply = false
+  item._createUnit = ''
+  if (supply.last_price_clp && !item.unit_price_clp) {
+    item.unit_price_clp = supply.last_price_clp
+  }
+}
+
+const clearSupplySelection = (item: DraftExpenseItem) => {
+  item.supply_id = ''
+  item.product_name = ''
+  item._supplySearch = ''
+}
+
+const createSupplyForItem = async (item: DraftExpenseItem) => {
+  const name = item._supplySearch.trim()
+  if (!name) return
+  item._creatingSupply = true
+  expenseItemModalError.value = ''
+  try {
+    const res = await api.post<{ ok: boolean; supply: any }>('/admin/supplies', {
+      name,
+      unit: item._createUnit.trim() || null,
+    })
+    if (res.ok) selectSupplyForItem(item, res.supply)
+  } catch (e: any) {
+    expenseItemModalError.value = e?.data?.error || 'Error al crear insumo'
+  } finally {
+    item._creatingSupply = false
+  }
+}
+
+const openAddExpenseItemModal = () => {
+  editingExpenseItemIndex.value = null
+  draftExpenseItem.value = createEmptyExpenseItem()
+  expenseItemModalError.value = ''
+  showExpenseItemModal.value = true
+}
+
+const openEditExpenseItemModal = (index: number) => {
+  editingExpenseItemIndex.value = index
+  const original = newExpense.value.items[index]
+  draftExpenseItem.value = {
+    ...createEmptyExpenseItem(),
+    supply_id: original.supply_id,
+    product_name: original.product_name,
+    quantity: original.quantity,
+    unit_price_clp: original.unit_price_clp,
+  }
+  expenseItemModalError.value = ''
+  showExpenseItemModal.value = true
+}
+
+const removeExpenseItem = (index: number) => {
+  newExpense.value.items.splice(index, 1)
+}
+
+const confirmExpenseItemModal = () => {
+  const d = draftExpenseItem.value
+  if (!d.supply_id) {
+    expenseItemModalError.value = 'Debes seleccionar o crear un producto'
+    return
+  }
+  if (!d.quantity || d.quantity <= 0) {
+    expenseItemModalError.value = 'La cantidad debe ser mayor a 0'
+    return
+  }
+  if (d.unit_price_clp == null || d.unit_price_clp < 0) {
+    expenseItemModalError.value = 'El precio unitario es requerido'
+    return
+  }
+  const existingKey = editingExpenseItemIndex.value !== null
+    ? newExpense.value.items[editingExpenseItemIndex.value]._key
+    : crypto.randomUUID()
+  const item: ExpenseItem = {
+    _key: existingKey,
+    supply_id: d.supply_id,
+    product_name: d.product_name,
+    quantity: d.quantity,
+    unit_price_clp: d.unit_price_clp,
+    total_clp: Math.round(d.quantity * d.unit_price_clp),
+  }
+  if (editingExpenseItemIndex.value !== null) {
+    newExpense.value.items[editingExpenseItemIndex.value] = item
+  } else {
+    newExpense.value.items.push(item)
+  }
+  showExpenseItemModal.value = false
+}
+
 const addExpense = async () => {
-  if (!newExpense.value.description.trim() || !newExpense.value.amount_clp) {
-    expenseError.value = 'Descripción y monto son requeridos'
+  const hasItems = newExpense.value.items.length > 0
+  if (!newExpense.value.description.trim()) {
+    expenseError.value = 'La descripción es requerida'
+    return
+  }
+  if (!hasItems && !newExpense.value.amount_clp) {
+    expenseError.value = 'Ingresa un monto o agrega al menos un producto al detalle'
     return
   }
   expenseSaving.value = true
@@ -434,13 +947,22 @@ const addExpense = async () => {
   try {
     await api.post('/admin/supplies/expenses', {
       description: newExpense.value.description.trim(),
-      amount_clp: newExpense.value.amount_clp,
+      amount_clp: hasItems ? undefined : newExpense.value.amount_clp,
       expense_date: newExpense.value.expense_date,
-      supply_id: newExpense.value.supply_id || null,
+      supply_id: hasItems ? null : (newExpense.value.supply_id || null),
+      provider_id: newExpense.value.provider_id || null,
       notes: newExpense.value.notes || null,
+      items: hasItems ? newExpense.value.items : undefined,
     })
-    newExpense.value = { description: '', amount_clp: null, expense_date: now.toISOString().split('T')[0], supply_id: '', notes: '' }
+    newExpense.value = {
+      description: '', amount_clp: null, expense_date: now.toISOString().split('T')[0],
+      supply_id: '', provider_id: '', provider_name: '', notes: '', items: [],
+    }
+    providerSearch.value = ''
+    providerResults.value = []
     await loadExpenses()
+    await loadSupplies()
+    await loadAllSupplies()
   } catch (e: any) {
     expenseError.value = e?.data?.error || 'Error al registrar gasto'
   } finally {
@@ -459,7 +981,14 @@ const deleteExpense = async (id: string) => {
 }
 
 onMounted(() => {
+  const userStr = localStorage.getItem('user')
+  if (userStr) {
+    try {
+      currentUserRole.value = JSON.parse(userStr)?.role || ''
+    } catch (e) {}
+  }
   loadSupplies()
+  loadAllSupplies()
   loadExpenses()
 })
 </script>

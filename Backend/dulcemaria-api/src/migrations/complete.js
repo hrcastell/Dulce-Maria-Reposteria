@@ -144,6 +144,10 @@ async function runCompleteMigrations() {
 
     // products
     `ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+    // products.cost_price_clp — costo del producto, usado para calcular el
+    // margen de ganancia en el formulario (precio - costo). Nullable: no
+    // todos los productos necesitan costo registrado.
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_clp INT;`,
 
     // ============================================
     // ÍNDICES
@@ -254,6 +258,17 @@ async function runCompleteMigrations() {
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
 
     // ============================================
+    // Tabla: providers (proveedores)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS providers (
+      id UUID PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_providers_name ON providers(name);`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_name_unique ON providers(LOWER(name));`,
+
+    // ============================================
     // Tabla: expense_records (gastos)
     // ============================================
     `CREATE TABLE IF NOT EXISTS expense_records (
@@ -266,6 +281,35 @@ async function runCompleteMigrations() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
     `CREATE INDEX IF NOT EXISTS idx_expense_records_date ON expense_records(expense_date);`,
+    `ALTER TABLE expense_records ADD COLUMN IF NOT EXISTS provider_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'expense_records_provider_id_fkey' AND conrelid = 'expense_records'::regclass
+      ) THEN
+        ALTER TABLE expense_records ADD CONSTRAINT expense_records_provider_id_fkey
+          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+    `CREATE INDEX IF NOT EXISTS idx_expense_records_provider ON expense_records(provider_id);`,
+
+    // ============================================
+    // Tabla: expense_record_items (detalle de gastos)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS expense_record_items (
+      id UUID PRIMARY KEY,
+      expense_record_id UUID NOT NULL REFERENCES expense_records(id) ON DELETE CASCADE,
+      supply_id UUID NOT NULL REFERENCES supplies(id) ON DELETE RESTRICT,
+      product_name_snapshot VARCHAR(200) NOT NULL,
+      quantity NUMERIC(12,3) NOT NULL CHECK (quantity > 0),
+      unit_price_clp INT NOT NULL CHECK (unit_price_clp >= 0),
+      total_clp INT NOT NULL CHECK (total_clp >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_expense_record_items_expense ON expense_record_items(expense_record_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_expense_record_items_supply ON expense_record_items(supply_id);`,
 
     // ============================================
     // Tablas: cake builder
@@ -293,7 +337,18 @@ async function runCompleteMigrations() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cake_config_option_category ON cake_config_option(category_id);`,
     `ALTER TABLE cake_config_option ADD COLUMN IF NOT EXISTS image_url TEXT;`,
-    `ALTER TABLE cake_orders ADD COLUMN IF NOT EXISTS theme_option_id UUID REFERENCES cake_config_option(id);`,
+    `ALTER TABLE cake_orders ADD COLUMN IF NOT EXISTS theme_option_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'cake_orders_theme_option_id_fkey' AND conrelid = 'cake_orders'::regclass
+      ) THEN
+        ALTER TABLE cake_orders ADD CONSTRAINT cake_orders_theme_option_id_fkey
+          FOREIGN KEY (theme_option_id) REFERENCES cake_config_option(id);
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
     `CREATE TABLE IF NOT EXISTS cake_orders (
       id UUID PRIMARY KEY,
       order_number VARCHAR(30) UNIQUE NOT NULL,
@@ -381,7 +436,18 @@ async function runCompleteMigrations() {
     // ============================================
     // FEATURE: Order Items Enhancements (variants & toppings)
     // ============================================
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'order_items_variant_id_fkey' AND conrelid = 'order_items'::regclass
+      ) THEN
+        ALTER TABLE order_items ADD CONSTRAINT order_items_variant_id_fkey
+          FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE SET NULL;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
     `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100);`,
     `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_toppings JSONB;`,
 
