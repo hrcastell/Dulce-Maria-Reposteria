@@ -256,6 +256,13 @@ async function runCompleteMigrations() {
     `CREATE TRIGGER trg_supplies_updated_at
       BEFORE UPDATE ON supplies
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+    // supplies.stock_qty — stock disponible del insumo, se ajusta a mano y se
+    // suma automáticamente al registrar un gasto con detalle (ver expense_record_items).
+    `ALTER TABLE supplies ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12,3) NOT NULL DEFAULT 0;`,
+    // supplies.reference_qty — a cuánto de `unit` corresponde last_price_clp
+    // (ej: 1 para el litro de leche, 30 para la bandeja de huevos), usado para
+    // calcular el costo de una receta al convertir unidades.
+    `ALTER TABLE supplies ADD COLUMN IF NOT EXISTS reference_qty NUMERIC(12,3) NOT NULL DEFAULT 1;`,
 
     // ============================================
     // Tabla: providers (proveedores)
@@ -310,6 +317,78 @@ async function runCompleteMigrations() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_expense ON expense_record_items(expense_record_id);`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_supply ON expense_record_items(supply_id);`,
+
+    // ============================================
+    // Tabla: kitchen_equipment (hornos, etc. — consumo de gas/electricidad)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS kitchen_equipment (
+      id UUID PRIMARY KEY,
+      name VARCHAR(150) NOT NULL,
+      energy_type VARCHAR(20) NOT NULL CHECK (energy_type IN ('ELECTRIC','GAS')),
+      consumption_rate NUMERIC(12,4) NOT NULL CHECK (consumption_rate >= 0),
+      consumption_unit VARCHAR(30) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_kitchen_equipment_active ON kitchen_equipment(is_active);`,
+
+    // ============================================
+    // Tabla: recipes (recetas)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipes (
+      id UUID PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      portions INT NOT NULL DEFAULT 1 CHECK (portions > 0),
+      notes TEXT,
+      equipment_id UUID REFERENCES kitchen_equipment(id) ON DELETE SET NULL,
+      baking_time_minutes NUMERIC(8,2) CHECK (baking_time_minutes IS NULL OR baking_time_minutes >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipes_name ON recipes(name);`,
+    `CREATE INDEX IF NOT EXISTS idx_recipes_active ON recipes(is_active);`,
+    `DROP TRIGGER IF EXISTS trg_recipes_updated_at ON recipes;`,
+    `CREATE TRIGGER trg_recipes_updated_at
+      BEFORE UPDATE ON recipes
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // ============================================
+    // Tabla: recipe_items (insumos que componen cada receta)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipe_items (
+      id UUID PRIMARY KEY,
+      recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      supply_id UUID NOT NULL REFERENCES supplies(id) ON DELETE RESTRICT,
+      quantity NUMERIC(12,3) NOT NULL CHECK (quantity > 0),
+      unit VARCHAR(20) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_supply ON recipe_items(supply_id);`,
+
+    // ============================================
+    // products.recipe_id — enlaza una receta a un producto para autocompletar
+    // cost_price_clp (costo receta / portions) en vez de cargarlo a mano.
+    // ============================================
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS recipe_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'products_recipe_id_fkey' AND conrelid = 'products'::regclass
+      ) THEN
+        ALTER TABLE products ADD CONSTRAINT products_recipe_id_fkey
+          FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+    `CREATE INDEX IF NOT EXISTS idx_products_recipe ON products(recipe_id);`,
+
+    // Config de energía (reutiliza system_config, mismo patrón que cake_base_price).
+    // Se seedean en 0 — hay que cargar el valor real desde /admin/config.
+    `INSERT INTO system_config (key, value) VALUES ('energy_price_kwh', '0') ON CONFLICT (key) DO NOTHING;`,
+    `INSERT INTO system_config (key, value) VALUES ('energy_price_gas', '0') ON CONFLICT (key) DO NOTHING;`,
 
     // ============================================
     // Tablas: cake builder
