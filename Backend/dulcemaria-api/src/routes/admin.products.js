@@ -10,6 +10,7 @@ const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 const { slugify } = require("../utils/slug");
+const { getRecipeCostsByIds } = require("../lib/recipeCost");
 
 const router = express.Router();
 
@@ -64,11 +65,28 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
     const pool = getPool();
     const r = await pool.query(
       `SELECT p.id, p.name, p.slug, p.description, p.price_clp, p.cost_price_clp, p.stock_qty, p.is_active, p.created_at, p.updated_at,
+              p.recipe_id, rec.name AS recipe_name,
               (SELECT url_thumb FROM product_images WHERE product_id=p.id AND is_primary=true ORDER BY sort_order ASC LIMIT 1) AS thumb_url
        FROM products p
+       LEFT JOIN recipes rec ON rec.id = p.recipe_id
        ORDER BY p.created_at DESC`
     );
-    res.json({ ok: true, items: r.rows });
+
+    // Productos con receta vinculada: el costo se calcula en vivo desde la receta
+    // (precio actual de los insumos), en vez de confiar en cost_price_clp guardado.
+    const recipeIds = r.rows.map((row) => row.recipe_id).filter(Boolean);
+    const costsByRecipe = await getRecipeCostsByIds(pool, recipeIds);
+
+    const items = r.rows.map((row) => {
+      const recipeCost = row.recipe_id ? costsByRecipe.get(row.recipe_id) : null;
+      return {
+        ...row,
+        cost_price_clp: recipeCost ? recipeCost.costPerPortion : row.cost_price_clp,
+        cost_from_recipe: !!recipeCost,
+      };
+    });
+
+    res.json({ ok: true, items });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -82,12 +100,13 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     costPriceClp: z.number().int().nonnegative().optional().nullable(),
     stockQty: z.number().int().nonnegative().default(0),
     isActive: z.boolean().default(true),
+    recipeId: z.string().uuid().optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
-  const { name, description, priceClp, costPriceClp, stockQty, isActive } = parsed.data;
+  const { name, description, priceClp, costPriceClp, stockQty, isActive, recipeId } = parsed.data;
 
   try {
     const pool = getPool();
@@ -103,13 +122,14 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO products (id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),NOW())`,
-      [id, name, slug, description ?? null, priceClp, costPriceClp ?? null, stockQty, isActive]
+      `INSERT INTO products (id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, recipe_id, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())`,
+      [id, name, slug, description ?? null, priceClp, costPriceClp ?? null, stockQty, isActive, recipeId ?? null]
     );
 
-    res.json({ ok: true, product: { id, name, slug, price_clp: priceClp, cost_price_clp: costPriceClp ?? null, stock_qty: stockQty, is_active: isActive } });
+    res.json({ ok: true, product: { id, name, slug, price_clp: priceClp, cost_price_clp: costPriceClp ?? null, stock_qty: stockQty, is_active: isActive, recipe_id: recipeId ?? null } });
   } catch (e) {
+    if (e?.code === "23503") return res.status(400).json({ ok: false, error: "La receta seleccionada ya no existe" });
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
 });
@@ -125,6 +145,7 @@ const updateProductHandler = async (req, res) => {
     costPriceClp: z.number().int().nonnegative().optional().nullable(),
     stockQty: z.number().int().nonnegative().optional(),
     isActive: z.boolean().optional(),
+    recipeId: z.string().uuid().optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
@@ -160,6 +181,7 @@ const updateProductHandler = async (req, res) => {
     if (patch.costPriceClp !== undefined) { fields.push(`cost_price_clp=$${n}`); values.push(patch.costPriceClp); n++; }
     if (patch.stockQty !== undefined) { fields.push(`stock_qty=$${n}`); values.push(patch.stockQty); n++; }
     if (patch.isActive !== undefined) { fields.push(`is_active=$${n}`); values.push(patch.isActive); n++; }
+    if (patch.recipeId !== undefined) { fields.push(`recipe_id=$${n}`); values.push(patch.recipeId); n++; }
 
     if (fields.length === 0) return res.status(400).json({ ok: false, error: "Nada para actualizar" });
     fields.push(`updated_at=NOW()`);
@@ -169,7 +191,7 @@ const updateProductHandler = async (req, res) => {
       UPDATE products
       SET ${fields.join(", ")}
       WHERE id=$${n}
-      RETURNING id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, updated_at
+      RETURNING id, name, slug, description, price_clp, cost_price_clp, stock_qty, is_active, recipe_id, updated_at
     `;
 
     const r = await pool.query(q, values);
@@ -177,6 +199,7 @@ const updateProductHandler = async (req, res) => {
 
     res.json({ ok: true, product: r.rows[0] });
   } catch (e) {
+    if (e?.code === "23503") return res.status(400).json({ ok: false, error: "La receta seleccionada ya no existe" });
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
 };

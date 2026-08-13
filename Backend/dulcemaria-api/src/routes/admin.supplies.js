@@ -14,13 +14,14 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT id, name, unit, last_price_clp, last_updated, notes, is_active, created_at
+      `SELECT id, name, unit, last_price_clp, stock_qty, reference_qty, last_updated, notes, is_active, created_at
        FROM supplies
        ${search ? "WHERE name ILIKE $1" : "WHERE is_active = true"}
        ORDER BY name ASC`,
       search ? [`%${search}%`] : []
     );
-    res.json({ ok: true, items: r.rows });
+    const items = r.rows.map((row) => ({ ...row, stock_qty: Number(row.stock_qty), reference_qty: Number(row.reference_qty) }));
+    res.json({ ok: true, items });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -31,6 +32,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     name: z.string().min(1).max(200),
     unit: z.string().max(50).optional().nullable(),
     last_price_clp: z.number().int().nonnegative().optional().nullable(),
+    stock_qty: z.number().nonnegative().optional(),
+    reference_qty: z.number().positive().optional(),
     notes: z.string().max(500).optional().nullable(),
   });
   const parsed = schema.safeParse(req.body);
@@ -40,12 +43,13 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     const pool = getPool();
     const d = parsed.data;
     const r = await pool.query(
-      `INSERT INTO supplies (id, name, unit, last_price_clp, last_updated, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO supplies (id, name, unit, last_price_clp, stock_qty, reference_qty, last_updated, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [crypto.randomUUID(), d.name, d.unit ?? null, d.last_price_clp ?? null, d.last_price_clp ? new Date() : null, d.notes ?? null]
+      [crypto.randomUUID(), d.name, d.unit ?? null, d.last_price_clp ?? null, d.stock_qty ?? 0, d.reference_qty ?? 1, d.last_price_clp ? new Date() : null, d.notes ?? null]
     );
-    res.json({ ok: true, supply: r.rows[0] });
+    const supply = { ...r.rows[0], stock_qty: Number(r.rows[0].stock_qty), reference_qty: Number(r.rows[0].reference_qty) };
+    res.json({ ok: true, supply });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -56,6 +60,8 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id")
     name: z.string().min(1).max(200).optional(),
     unit: z.string().max(50).optional().nullable(),
     last_price_clp: z.number().int().nonnegative().optional().nullable(),
+    stock_qty: z.number().nonnegative().optional(),
+    reference_qty: z.number().positive().optional(),
     notes: z.string().max(500).optional().nullable(),
     is_active: z.boolean().optional(),
   });
@@ -73,6 +79,8 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id")
     fields.push(`last_price_clp=$${n++}`); values.push(d.last_price_clp ?? null);
     fields.push(`last_updated=$${n++}`); values.push(d.last_price_clp != null ? new Date() : null);
   }
+  if (d.stock_qty !== undefined) { fields.push(`stock_qty=$${n++}`); values.push(d.stock_qty); }
+  if (d.reference_qty !== undefined) { fields.push(`reference_qty=$${n++}`); values.push(d.reference_qty); }
   if ("notes" in d) { fields.push(`notes=$${n++}`); values.push(d.notes ?? null); }
   if (d.is_active !== undefined) { fields.push(`is_active=$${n++}`); values.push(d.is_active); }
 
@@ -87,7 +95,8 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id")
       values
     );
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Insumo no encontrado" });
-    res.json({ ok: true, supply: r.rows[0] });
+    const supply = { ...r.rows[0], stock_qty: Number(r.rows[0].stock_qty), reference_qty: Number(r.rows[0].reference_qty) };
+    res.json({ ok: true, supply });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -205,6 +214,11 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
            WHERE id=$2 AND (last_updated IS NULL OR last_updated <= $3::timestamptz)`,
           [item.unit_price_clp, item.supply_id, expenseDate]
         );
+        // La compra suma stock al insumo. Se revierte si el gasto se borra (ver DELETE).
+        await client.query(
+          `UPDATE supplies SET stock_qty = stock_qty + $1 WHERE id=$2`,
+          [item.quantity, item.supply_id]
+        );
       }
     }
 
@@ -226,13 +240,42 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
 });
 
 router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+  const pool = getPool();
+  let client;
   try {
-    const pool = getPool();
-    const r = await pool.query("DELETE FROM expense_records WHERE id=$1 RETURNING id", [req.params.id]);
-    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Gasto no encontrado" });
+    client = await pool.connect();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+  try {
+    await client.query("BEGIN");
+
+    // Revierte el stock que había sumado este gasto antes de borrarlo (ver POST /expenses).
+    const itemsRes = await client.query(
+      `SELECT supply_id, quantity FROM expense_record_items WHERE expense_record_id=$1`,
+      [req.params.id]
+    );
+    for (const item of itemsRes.rows) {
+      await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1 WHERE id=$2`, [item.quantity, item.supply_id]);
+    }
+
+    const r = await client.query("DELETE FROM expense_records WHERE id=$1 RETURNING id", [req.params.id]);
+    if (r.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, error: "Gasto no encontrado" });
+    }
+
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("Rollback failed:", rollbackErr.message);
+    }
     res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  } finally {
+    client.release();
   }
 });
 
