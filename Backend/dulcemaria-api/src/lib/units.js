@@ -20,6 +20,12 @@ const UNIT_DIMENSIONS = {
   unidad: { dimension: "count", toBase: 1 },
 };
 
+// Unidades canónicas aceptadas en formularios (insumos y líneas de receta).
+// Restringir a esta lista fija evita cargar texto libre tipo "1 Kg" o "30
+// Unidades" que rompe la conversión en silencio (se tratan como una unidad
+// "rara" compatible solo consigo misma, en vez de convertirse de verdad).
+const VALID_UNITS = Object.keys(UNIT_DIMENSIONS);
+
 function normalizeUnit(raw) {
   const key = String(raw || "").trim().toLowerCase();
   return UNIT_ALIASES[key] || key;
@@ -42,4 +48,4 @@ function convertQuantity(value, fromUnit, toUnit) {
   return (value * fromDef.toBase) / toDef.toBase;
 }
 
-module.exports = { normalizeUnit, convertQuantity };
+module.exports = { normalizeUnit, convertQuantity, VALID_UNITS };

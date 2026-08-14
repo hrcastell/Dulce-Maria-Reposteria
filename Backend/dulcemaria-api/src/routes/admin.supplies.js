@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
+const { VALID_UNITS } = require("../lib/units");
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
 router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const schema = z.object({
     name: z.string().min(1).max(200),
-    unit: z.string().max(50).optional().nullable(),
+    unit: z.enum(VALID_UNITS).optional().nullable(),
     last_price_clp: z.number().int().nonnegative().optional().nullable(),
     stock_qty: z.number().nonnegative().optional(),
     reference_qty: z.number().positive().optional(),
@@ -58,7 +59,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
 router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
   const schema = z.object({
     name: z.string().min(1).max(200).optional(),
-    unit: z.string().max(50).optional().nullable(),
+    unit: z.enum(VALID_UNITS).optional().nullable(),
     last_price_clp: z.number().int().nonnegative().optional().nullable(),
     stock_qty: z.number().nonnegative().optional(),
     reference_qty: z.number().positive().optional(),

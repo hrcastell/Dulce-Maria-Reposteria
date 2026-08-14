@@ -208,7 +208,9 @@
             <div v-if="draftItem.supply_id" class="flex items-center gap-2">
               <span class="text-sm font-medium text-warm-700 flex-1 truncate">{{ draftItem.supply_name }}</span>
               <input v-model.number="draftItem.quantity" type="number" min="0" step="any" class="w-20 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Cant.">
-              <input v-model="draftItem.unit" type="text" class="w-20 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Unidad">
+              <select v-model="draftItem.unit" class="w-24 px-2 py-1.5 border border-warm-200 rounded-lg text-sm">
+                <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+              </select>
               <button type="button" class="px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg flex-shrink-0" @click="addDraftItem">Agregar</button>
             </div>
           </div>
@@ -387,7 +389,9 @@
         <div v-if="componentItemDraft.supply_id" class="flex items-center gap-2">
           <span class="text-sm font-medium text-warm-700 flex-1 truncate">{{ componentItemDraft.supply_name }}</span>
           <input v-model.number="componentItemDraft.quantity" type="number" min="0" step="any" class="w-24 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Cant.">
-          <input v-model="componentItemDraft.unit" type="text" class="w-24 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Unidad">
+          <select v-model="componentItemDraft.unit" class="w-28 px-2 py-1.5 border border-warm-200 rounded-lg text-sm">
+            <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+          </select>
         </div>
       </div>
     </Modal>
@@ -446,6 +450,17 @@ definePageMeta({
 })
 
 useHead({ title: 'Plantilla de Costo | Dulce María' })
+
+// Unidades fijas — deben coincidir con Backend/dulcemaria-api/src/lib/units.js
+// y con supplies.vue. Texto libre permitía cargar "1 Kg"/"30 Unidades" en vez
+// de "kg"/"unidad", lo que rompía la conversión silenciosamente.
+const UNIT_OPTIONS = [
+  { value: 'g', label: 'Gramos (g)' },
+  { value: 'kg', label: 'Kilogramos (kg)' },
+  { value: 'ml', label: 'Mililitros (ml)' },
+  { value: 'l', label: 'Litros (l)' },
+  { value: 'unidad', label: 'Unidad' },
+]
 
 interface RecipeCard {
   id: string
@@ -666,7 +681,7 @@ const draftItem = ref({
   supply_id: '',
   supply_name: '',
   quantity: null as number | null,
-  unit: '',
+  unit: 'unidad',
   seq: 0,
 })
 
@@ -692,7 +707,7 @@ const searchDraftSupplies = async () => {
 const selectDraftSupply = (s: any) => {
   draftItem.value.supply_id = s.id
   draftItem.value.supply_name = s.name
-  draftItem.value.unit = s.unit || ''
+  draftItem.value.unit = s.unit || 'unidad'
   draftItem.value.search = ''
   draftItem.value.results = []
   draftItem.value.showDropdown = false
@@ -711,7 +726,7 @@ const addDraftItem = () => {
     quantity: draftItem.value.quantity,
     unit: draftItem.value.unit.trim(),
   })
-  draftItem.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: '', seq: draftItem.value.seq }
+  draftItem.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: 'unidad', seq: draftItem.value.seq }
 }
 
 // ── Componentes (modo escalable) ──
@@ -729,14 +744,14 @@ const componentItemDraft = ref({
   supply_id: '',
   supply_name: '',
   quantity: null as number | null,
-  unit: '',
+  unit: 'unidad',
   seq: 0,
 })
 
 const openAddComponentItemModal = (componentIndex: number) => {
   activeComponentIndex.value = componentIndex
   componentItemError.value = ''
-  componentItemDraft.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: '', seq: 0 }
+  componentItemDraft.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: 'unidad', seq: 0 }
   showComponentItemModal.value = true
 }
 
@@ -762,7 +777,7 @@ const searchComponentItemSupplies = async () => {
 const selectComponentItemSupply = (s: any) => {
   componentItemDraft.value.supply_id = s.id
   componentItemDraft.value.supply_name = s.name
-  componentItemDraft.value.unit = s.unit || ''
+  componentItemDraft.value.unit = s.unit || 'unidad'
   componentItemDraft.value.search = ''
   componentItemDraft.value.results = []
   componentItemDraft.value.showDropdown = false

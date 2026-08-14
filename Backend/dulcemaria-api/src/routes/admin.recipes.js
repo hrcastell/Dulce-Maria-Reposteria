@@ -11,14 +11,14 @@ const {
   scaleComponents,
   computeVolumeRatio,
 } = require("../lib/recipeCost");
-const { convertQuantity } = require("../lib/units");
+const { convertQuantity, VALID_UNITS } = require("../lib/units");
 
 const router = express.Router();
 
 const flatItemSchema = z.object({
   supply_id: z.string().uuid(),
   quantity: z.number().positive(),
-  unit: z.string().min(1).max(20),
+  unit: z.enum(VALID_UNITS),
 });
 
 const componentSchema = z.object({

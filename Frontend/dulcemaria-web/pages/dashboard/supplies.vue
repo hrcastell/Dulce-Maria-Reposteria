@@ -431,7 +431,9 @@
             </div>
             <div>
               <label class="label text-xs">Unidad</label>
-              <input v-model="supplyForm.unit" type="text" class="input" placeholder="unidad, g, ml...">
+              <select v-model="supplyForm.unit" class="input">
+                <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -577,6 +579,18 @@ const tab = ref<'supplies' | 'expenses'>('supplies')
 const currentUserRole = ref('')
 const canWrite = computed(() => currentUserRole.value !== 'STAFF')
 
+// Unidades fijas — antes era texto libre y permitía cargar cosas como "1 Kg" o
+// "30 Unidades" en vez de solo "kg"/"unidad", lo que rompía la conversión (el
+// sistema las tomaba como una unidad "rara" compatible solo consigo misma, sin
+// convertir de verdad). Debe coincidir con Backend/dulcemaria-api/src/lib/units.js.
+const UNIT_OPTIONS = [
+  { value: 'g', label: 'Gramos (g)' },
+  { value: 'kg', label: 'Kilogramos (kg)' },
+  { value: 'ml', label: 'Mililitros (ml)' },
+  { value: 'l', label: 'Litros (l)' },
+  { value: 'unidad', label: 'Unidad' },
+]
+
 // ── Supplies ─────────────────────────────────────────────────────────────────
 const supplies = ref<any[]>([])
 // Catálogo completo, sin filtrar, para el <select> de insumo del modo simple de
@@ -591,7 +605,7 @@ const supplySaving = ref(false)
 const supplyFormError = ref('')
 const supplyForm = ref({
   name: '',
-  unit: '',
+  unit: 'unidad',
   last_price_clp: null as number | null,
   reference_qty: 1 as number,
   stock_qty: 0 as number,
@@ -661,7 +675,7 @@ const openSupplyModal = (supply?: any) => {
   supplyFormError.value = ''
   supplyForm.value = {
     name: supply?.name || '',
-    unit: supply?.unit || '',
+    unit: supply?.unit || 'unidad',
     last_price_clp: supply?.last_price_clp ?? null,
     reference_qty: supply?.reference_qty ?? 1,
     stock_qty: supply?.stock_qty ?? 0,
