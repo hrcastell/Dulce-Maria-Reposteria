@@ -70,25 +70,29 @@
                 <thead class="bg-warm-50">
                   <tr>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Insumo</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Unidad</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Último Precio</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Presentación</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Precio c/u</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Stock</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Actualizado</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold text-warm-600 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-warm-100">
                   <tr v-if="supplies.length === 0">
-                    <td colspan="5" class="px-4 py-8 text-center text-warm-400">No hay insumos registrados</td>
+                    <td colspan="6" class="px-4 py-8 text-center text-warm-400">No hay insumos registrados</td>
                   </tr>
                   <tr v-for="s in supplies" :key="s.id" class="hover:bg-warm-50/50 transition-colors">
                     <td class="px-4 py-3">
                       <div class="text-sm font-medium text-warm-800">{{ s.name }}</div>
                       <div v-if="s.notes" class="text-xs text-warm-400">{{ s.notes }}</div>
                     </td>
-                    <td class="px-4 py-3 text-sm text-warm-600">{{ s.unit || '—' }}</td>
-                    <td class="px-4 py-3 text-sm font-semibold text-warm-800">
-                      {{ s.last_price_clp ? `$${formatPrice(s.last_price_clp)}` : '—' }}
+                    <td class="px-4 py-3 text-sm text-warm-600">
+                      {{ s.reference_qty }} {{ s.unit || 'unidad' }} — ${{ formatPrice(s.last_price_clp || 0) }}
                     </td>
+                    <td class="px-4 py-3 text-sm font-semibold text-warm-800">
+                      {{ s.last_price_clp ? `$${formatPrice(unitPriceFor(s))} / ${s.unit || 'unidad'}` : '—' }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-warm-600">{{ s.stock_qty }} {{ s.unit || '' }}</td>
                     <td class="px-4 py-3">
                       <span v-if="s.last_updated" :class="isPriceStale(s.last_updated) ? 'text-warning-600' : 'text-warm-500'" class="text-xs">
                         {{ isPriceStale(s.last_updated) ? '⚠️ ' : '' }}{{ formatDate(s.last_updated) }}
@@ -120,16 +124,17 @@
                     
                     <div class="mt-2 flex items-center justify-between text-sm">
                       <div class="text-warm-500">
-                        <span class="block">Unidad: <span class="text-warm-700 font-medium">{{ s.unit || '—' }}</span></span>
+                        <span class="block">Trae: <span class="text-warm-700 font-medium">{{ s.reference_qty }} {{ s.unit || 'unidad' }}</span></span>
+                        <span class="block">Stock: <span class="text-warm-700 font-medium">{{ s.stock_qty }} {{ s.unit || '' }}</span></span>
                         <span class="block mt-0.5 text-xs">
                           {{ s.last_updated ? formatDate(s.last_updated) : '—' }}
                           <span v-if="isPriceStale(s.last_updated)">⚠️</span>
                         </span>
                       </div>
                       <div class="text-right">
-                        <p class="text-xs text-warm-400">Precio</p>
+                        <p class="text-xs text-warm-400">Precio c/u</p>
                         <p class="font-bold text-warm-800 text-lg">
-                          {{ s.last_price_clp ? `$${formatPrice(s.last_price_clp)}` : '—' }}
+                          {{ s.last_price_clp ? `$${formatPrice(unitPriceFor(s))}` : '—' }}
                         </p>
                       </div>
                     </div>
@@ -414,18 +419,39 @@
       <div class="space-y-4">
         <div>
           <label class="label">Nombre *</label>
-          <input v-model="supplyForm.name" type="text" class="input" placeholder="Ej: Harina">
+          <input v-model="supplyForm.name" type="text" class="input" placeholder="Ej: Huevos">
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="label">Unidad</label>
-            <input v-model="supplyForm.unit" type="text" class="input" placeholder="kg, lt, unidad...">
-          </div>
-          <div>
-            <label class="label">Último precio (CLP)</label>
-            <input v-model.number="supplyForm.last_price_clp" type="number" min="0" class="input" placeholder="0">
+
+        <div class="p-3 bg-warm-50 rounded-xl border border-warm-100">
+          <p class="text-xs font-medium text-warm-600 mb-2">¿Cómo lo comprás? — ej: una bandeja trae 30 huevos</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label text-xs">Trae (cantidad)</label>
+              <input v-model.number="supplyForm.reference_qty" type="number" min="0.001" step="any" class="input" placeholder="30">
+            </div>
+            <div>
+              <label class="label text-xs">Unidad</label>
+              <input v-model="supplyForm.unit" type="text" class="input" placeholder="unidad, g, ml...">
+            </div>
           </div>
         </div>
+
+        <div>
+          <label class="label">Precio pagado por esa presentación (CLP)</label>
+          <input v-model.number="supplyForm.last_price_clp" type="number" min="0" class="input" placeholder="7500">
+        </div>
+
+        <div v-if="supplyUnitPrice !== null" class="flex items-center justify-between px-3 py-2 bg-primary-50 rounded-xl border border-primary-100">
+          <span class="text-sm text-warm-600">Precio por {{ supplyForm.unit || 'unidad' }}</span>
+          <span class="text-sm font-bold text-warm-800">${{ formatPrice(supplyUnitPrice) }}</span>
+        </div>
+
+        <div>
+          <label class="label">Stock actual</label>
+          <input v-model.number="supplyForm.stock_qty" type="number" min="0" step="any" class="input" placeholder="0">
+          <p class="text-xs text-warm-500 mt-1">Se suma solo al registrar un gasto con detalle — ajustá acá si hace falta corregirlo a mano.</p>
+        </div>
+
         <div>
           <label class="label">Notas</label>
           <textarea v-model="supplyForm.notes" rows="2" class="input" placeholder="Notas opcionales"></textarea>
@@ -563,7 +589,24 @@ const showSupplyModal = ref(false)
 const editingSupply = ref<any>(null)
 const supplySaving = ref(false)
 const supplyFormError = ref('')
-const supplyForm = ref({ name: '', unit: '', last_price_clp: null as number | null, notes: '' })
+const supplyForm = ref({
+  name: '',
+  unit: '',
+  last_price_clp: null as number | null,
+  reference_qty: 1 as number,
+  stock_qty: 0 as number,
+  notes: '',
+})
+
+// Precio por unidad de referencia (ej: $7.500 / 30 huevos = $250 c/u) — mismo
+// cálculo que usa el backend para costear recetas, mostrado acá para que quede
+// claro de inmediato qué está pagando por unidad.
+const supplyUnitPrice = computed(() => {
+  const price = supplyForm.value.last_price_clp
+  const ref = supplyForm.value.reference_qty
+  if (!price || !ref || ref <= 0) return null
+  return price / ref
+})
 
 const now = new Date()
 const months = [
@@ -577,6 +620,7 @@ const months = [
 
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n))
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('es-CL')
+const unitPriceFor = (s: any) => (s.last_price_clp && s.reference_qty ? s.last_price_clp / s.reference_qty : 0)
 const isPriceStale = (iso: string) => {
   const d = new Date(iso)
   const diff = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)
@@ -619,6 +663,8 @@ const openSupplyModal = (supply?: any) => {
     name: supply?.name || '',
     unit: supply?.unit || '',
     last_price_clp: supply?.last_price_clp ?? null,
+    reference_qty: supply?.reference_qty ?? 1,
+    stock_qty: supply?.stock_qty ?? 0,
     notes: supply?.notes || '',
   }
   showSupplyModal.value = true
@@ -636,6 +682,8 @@ const saveSupply = async () => {
       name: supplyForm.value.name.trim(),
       unit: supplyForm.value.unit || null,
       last_price_clp: supplyForm.value.last_price_clp || null,
+      reference_qty: supplyForm.value.reference_qty || 1,
+      stock_qty: supplyForm.value.stock_qty ?? 0,
       notes: supplyForm.value.notes || null,
     }
     if (editingSupply.value) {

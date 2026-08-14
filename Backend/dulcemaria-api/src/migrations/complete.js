@@ -353,6 +353,27 @@ async function runCompleteMigrations() {
       BEFORE UPDATE ON recipes
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
 
+    // Escalado por molde (torta por capas) — receta "patrón" calibrada para un
+    // molde/capas de referencia, que luego se recalcula para otro tamaño.
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS is_scalable BOOLEAN NOT NULL DEFAULT false;`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_diameter_cm NUMERIC(8,2);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_height_cm NUMERIC(8,2);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_layers INT;`,
+
+    // ============================================
+    // Tabla: recipe_components (Mezcla, Almíbar, Relleno, Cobertura...) —
+    // solo se usan cuando recipes.is_scalable = true.
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipe_components (
+      id UUID PRIMARY KEY,
+      recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      name VARCHAR(150) NOT NULL,
+      layer_scale_basis VARCHAR(10) NOT NULL DEFAULT 'NONE' CHECK (layer_scale_basis IN ('CAKE','FILLING','NONE')),
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_components_recipe ON recipe_components(recipe_id);`,
+
     // ============================================
     // Tabla: recipe_items (insumos que componen cada receta)
     // ============================================
@@ -366,6 +387,21 @@ async function runCompleteMigrations() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);`,
     `CREATE INDEX IF NOT EXISTS idx_recipe_items_supply ON recipe_items(supply_id);`,
+    // component_id — a qué componente pertenece esta línea cuando la receta es
+    // escalable (null en recetas planas). Si se borra el componente, sus líneas van con él.
+    `ALTER TABLE recipe_items ADD COLUMN IF NOT EXISTS component_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'recipe_items_component_id_fkey' AND conrelid = 'recipe_items'::regclass
+      ) THEN
+        ALTER TABLE recipe_items ADD CONSTRAINT recipe_items_component_id_fkey
+          FOREIGN KEY (component_id) REFERENCES recipe_components(id) ON DELETE CASCADE;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_component ON recipe_items(component_id);`,
 
     // ============================================
     // products.recipe_id — enlaza una receta a un producto para autocompletar
@@ -384,6 +420,11 @@ async function runCompleteMigrations() {
     EXCEPTION WHEN undefined_table THEN NULL;
     END $$;`,
     `CREATE INDEX IF NOT EXISTS idx_products_recipe ON products(recipe_id);`,
+    // Tamaño objetivo cuando la receta vinculada es escalable — si se dejan en
+    // null, se usa el molde/capas de referencia de la receta.
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_diameter_cm NUMERIC(8,2);`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_height_cm NUMERIC(8,2);`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_layers INT;`,
 
     // Config de energía (reutiliza system_config, mismo patrón que cake_base_price).
     // Se seedean en 0 — hay que cargar el valor real desde /admin/config.

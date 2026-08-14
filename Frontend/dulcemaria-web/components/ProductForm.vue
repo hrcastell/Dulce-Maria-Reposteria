@@ -57,11 +57,20 @@
               class="block w-full text-left px-4 py-2 hover:bg-warm-50 text-sm"
               @click="selectRecipe(r)"
             >
-              {{ r.name }} <span class="text-warm-400">— costo/porción ${{ formatPrice(r.costPerPortion) }}</span>
+              {{ r.name }} <span class="text-warm-400">— costo/porción ${{ formatPrice(r.costPerPortion) }}{{ r.is_scalable ? ' (referencia)' : '' }}</span>
             </button>
           </div>
         </div>
         <p class="text-xs text-warm-500">El costo del producto se calcula solo desde el costo de la receta (por porción), en vez de cargarse a mano.</p>
+
+        <div v-if="recipeId && recipeIsScalable" class="p-3 bg-warm-50 rounded-xl border border-warm-100">
+          <p class="text-xs font-medium text-warm-600 mb-2">Esta receta es escalable — tamaño de este producto (vacío = usa el tamaño de referencia de la receta)</p>
+          <div class="grid grid-cols-3 gap-2">
+            <input v-model.number="targetDiameterCm" type="number" min="0" step="any" placeholder="Diám. cm" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">
+            <input v-model.number="targetHeightCm" type="number" min="0" step="any" placeholder="Alto cm" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">
+            <input v-model.number="targetLayers" type="number" min="1" placeholder="Capas" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -281,6 +290,10 @@ const ivaPct = ref(19)
 const linkRecipe = ref(!!props.product?.recipe_id)
 const recipeId = ref<string | null>(props.product?.recipe_id ?? null)
 const recipeName = ref<string>(props.product?.recipe_name ?? '')
+const recipeIsScalable = ref<boolean>(!!props.product?.recipe_is_scalable)
+const targetDiameterCm = ref<number | null>(props.product?.target_diameter_cm ?? null)
+const targetHeightCm = ref<number | null>(props.product?.target_height_cm ?? null)
+const targetLayers = ref<number | null>(props.product?.target_layers ?? null)
 const recipeSearch = ref('')
 const recipeResults = ref<any[]>([])
 const showRecipeDropdown = ref(false)
@@ -308,20 +321,47 @@ const onRecipeSearchInput = () => {
 const selectRecipe = (r: any) => {
   recipeId.value = r.id
   recipeName.value = r.name
+  recipeIsScalable.value = !!r.is_scalable
   recipeSearch.value = ''
   recipeResults.value = []
   showRecipeDropdown.value = false
-  costPrice.value = r.costPerPortion
+  targetDiameterCm.value = null
+  targetHeightCm.value = null
+  targetLayers.value = null
+  costPrice.value = r.costPerPortion // referencia — se recalcula si carga un tamaño objetivo
   onCostPriceInput()
 }
 
 const clearRecipeSelection = () => {
   recipeId.value = null
   recipeName.value = ''
+  recipeIsScalable.value = false
+  targetDiameterCm.value = null
+  targetHeightCm.value = null
+  targetLayers.value = null
 }
 
 const onToggleLinkRecipe = () => {
   if (!linkRecipe.value) clearRecipeSelection()
+}
+
+// Con receta escalable + tamaño objetivo completo, recalcula el costo a ese tamaño.
+let targetDimsTimer: any = null
+const onTargetDimsInput = () => {
+  clearTimeout(targetDimsTimer)
+  targetDimsTimer = setTimeout(recalculateCostAtTarget, 350)
+}
+
+const recalculateCostAtTarget = async () => {
+  if (!recipeId.value || !targetDiameterCm.value || !targetHeightCm.value || !targetLayers.value) return
+  try {
+    const qs = `?target_diameter_cm=${targetDiameterCm.value}&target_height_cm=${targetHeightCm.value}&target_layers=${targetLayers.value}`
+    const res = await api.get<{ ok: boolean; cost: any }>(`/admin/recipes/${recipeId.value}${qs}`)
+    if (res.ok) {
+      costPrice.value = res.cost.costPerPortion
+      onCostPriceInput()
+    }
+  } catch {}
 }
 
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n || 0))
@@ -416,7 +456,10 @@ const submit = () => {
       costPriceClp: costPrice.value,
       stockQty: form.value.stock_qty,
       isActive: form.value.is_active,
-      recipeId: linkRecipe.value ? recipeId.value : null
+      recipeId: linkRecipe.value ? recipeId.value : null,
+      targetDiameterCm: linkRecipe.value && recipeIsScalable.value ? targetDiameterCm.value : null,
+      targetHeightCm: linkRecipe.value && recipeIsScalable.value ? targetHeightCm.value : null,
+      targetLayers: linkRecipe.value && recipeIsScalable.value ? targetLayers.value : null,
     }
     emit('submit', data)
   }

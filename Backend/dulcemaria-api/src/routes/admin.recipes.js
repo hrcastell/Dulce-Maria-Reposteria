@@ -4,55 +4,97 @@ const crypto = require("crypto");
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
-const { computeRecipeCost, getEnergyPrices, getItemsForRecipes } = require("../lib/recipeCost");
+const {
+  getRecipeCostsByIds,
+  getSingleRecipeCost,
+  getComponentsForRecipe,
+  scaleComponents,
+  computeVolumeRatio,
+} = require("../lib/recipeCost");
 const { convertQuantity } = require("../lib/units");
 
 const router = express.Router();
 
-const itemSchema = z.object({
+const flatItemSchema = z.object({
   supply_id: z.string().uuid(),
   quantity: z.number().positive(),
   unit: z.string().min(1).max(20),
 });
 
-const recipeSchema = z.object({
-  name: z.string().min(1).max(200),
-  portions: z.number().int().positive().default(1),
-  notes: z.string().max(1000).optional().nullable(),
-  equipment_id: z.string().uuid().optional().nullable(),
-  baking_time_minutes: z.number().nonnegative().optional().nullable(),
-  items: z.array(itemSchema).max(100).default([]),
+const componentSchema = z.object({
+  name: z.string().min(1).max(150),
+  layer_scale_basis: z.enum(["CAKE", "FILLING", "NONE"]).default("NONE"),
+  items: z.array(flatItemSchema).max(100).default([]),
 });
 
-// GET /admin/recipes — listado para las cards
+const recipeSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    portions: z.number().int().positive().default(1),
+    notes: z.string().max(1000).optional().nullable(),
+    equipment_id: z.string().uuid().optional().nullable(),
+    baking_time_minutes: z.number().nonnegative().optional().nullable(),
+    is_scalable: z.boolean().default(false),
+    ref_diameter_cm: z.number().positive().optional().nullable(),
+    ref_height_cm: z.number().positive().optional().nullable(),
+    ref_layers: z.number().int().positive().optional().nullable(),
+    items: z.array(flatItemSchema).max(100).default([]), // usado cuando is_scalable=false
+    components: z.array(componentSchema).max(20).default([]), // usado cuando is_scalable=true
+  })
+  .refine((d) => !d.is_scalable || (d.ref_diameter_cm && d.ref_height_cm && d.ref_layers), {
+    message: "Una receta escalable necesita diámetro, alto y capas de referencia",
+  });
+
+/** Persiste componentes+items (escalable) o items planos (no escalable) para una receta ya creada. */
+async function persistRecipeItems(client, recipeId, d) {
+  if (d.is_scalable) {
+    for (let i = 0; i < d.components.length; i++) {
+      const comp = d.components[i];
+      const compId = crypto.randomUUID();
+      await client.query(
+        `INSERT INTO recipe_components (id, recipe_id, name, layer_scale_basis, sort_order) VALUES ($1,$2,$3,$4,$5)`,
+        [compId, recipeId, comp.name, comp.layer_scale_basis, i]
+      );
+      for (const item of comp.items) {
+        await client.query(
+          `INSERT INTO recipe_items (id, recipe_id, supply_id, quantity, unit, component_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [crypto.randomUUID(), recipeId, item.supply_id, item.quantity, item.unit, compId]
+        );
+      }
+    }
+  } else {
+    for (const item of d.items) {
+      await client.query(
+        `INSERT INTO recipe_items (id, recipe_id, supply_id, quantity, unit) VALUES ($1,$2,$3,$4,$5)`,
+        [crypto.randomUUID(), recipeId, item.supply_id, item.quantity, item.unit]
+      );
+    }
+  }
+}
+
+// GET /admin/recipes — listado para las cards (escalables se costean a su tamaño de referencia)
 router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   const search = String(req.query.q || "").trim();
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT r.id, r.name, r.portions, r.equipment_id, r.baking_time_minutes, r.is_active,
-              eq.energy_type, eq.consumption_rate
+      `SELECT r.id, r.name, r.portions, r.is_active, r.is_scalable
        FROM recipes r
-       LEFT JOIN kitchen_equipment eq ON eq.id = r.equipment_id
        ${search ? "WHERE r.name ILIKE $1" : "WHERE r.is_active = true"}
        ORDER BY r.name ASC`,
       search ? [`%${search}%`] : []
     );
 
-    const recipeIds = r.rows.map((row) => row.id);
-    const [itemsMap, energyPrices] = await Promise.all([
-      getItemsForRecipes(pool, recipeIds),
-      getEnergyPrices(pool),
-    ]);
+    const costsById = await getRecipeCostsByIds(pool, r.rows.map((row) => row.id));
 
     const items = r.rows.map((row) => {
-      const equipment = row.equipment_id ? { energy_type: row.energy_type, consumption_rate: row.consumption_rate } : null;
-      const cost = computeRecipeCost({ recipe: row, items: itemsMap.get(row.id) || [], equipment, ...energyPrices });
+      const cost = costsById.get(row.id) || { itemCount: 0, totalCost: 0, costPerPortion: 0, maxBatches: 0, hasUnpricedItem: false };
       return {
         id: row.id,
         name: row.name,
         portions: row.portions,
         is_active: row.is_active,
+        is_scalable: row.is_scalable,
         itemCount: cost.itemCount,
         totalCost: cost.totalCost,
         costPerPortion: cost.costPerPortion,
@@ -67,42 +109,62 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
   }
 });
 
-// GET /admin/recipes/:id — detalle para el formulario
+// GET /admin/recipes/:id — detalle para el formulario. Con ?target_diameter_cm=&target_height_cm=&target_layers=
+// costea una receta escalable a ese tamaño en vez de al de referencia.
 router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT r.*, eq.name AS equipment_name, eq.energy_type, eq.consumption_rate
-       FROM recipes r
-       LEFT JOIN kitchen_equipment eq ON eq.id = r.equipment_id
-       WHERE r.id = $1`,
+      `SELECT rec.*, eq.name AS equipment_name
+       FROM recipes rec
+       LEFT JOIN kitchen_equipment eq ON eq.id = rec.equipment_id
+       WHERE rec.id = $1`,
       [req.params.id]
     );
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Receta no encontrada" });
     const row = r.rows[0];
 
-    const itemsRes = await pool.query(
-      `SELECT ri.id, ri.supply_id, ri.quantity, ri.unit,
-              s.name AS supply_name, s.unit AS supply_unit, s.last_price_clp, s.reference_qty, s.stock_qty
-       FROM recipe_items ri
-       JOIN supplies s ON s.id = ri.supply_id
-       WHERE ri.recipe_id = $1
-       ORDER BY ri.created_at ASC`,
-      [req.params.id]
-    );
+    const targetDims = {};
+    if (req.query.target_diameter_cm) targetDims.diameterCm = Number(req.query.target_diameter_cm);
+    if (req.query.target_height_cm) targetDims.heightCm = Number(req.query.target_height_cm);
+    if (req.query.target_layers) targetDims.layers = Number(req.query.target_layers);
 
-    const energyPrices = await getEnergyPrices(pool);
-    const equipment = row.equipment_id ? { energy_type: row.energy_type, consumption_rate: row.consumption_rate } : null;
-    const cost = computeRecipeCost({
-      recipe: row,
-      items: itemsRes.rows.map((it) => ({
-        quantity: it.quantity,
+    const cost = await getSingleRecipeCost(pool, req.params.id, targetDims);
+
+    let items = null;
+    let components = null;
+    if (row.is_scalable) {
+      const comps = await getComponentsForRecipe(pool, req.params.id);
+      components = comps.map((c) => ({
+        id: c.id,
+        name: c.name,
+        layer_scale_basis: c.layer_scale_basis,
+        items: c.items.map((it) => ({
+          supply_id: it.supply.id,
+          supply_name: it.supply.name,
+          supply_unit: it.supply.unit,
+          quantity: Number(it.quantity),
+          unit: it.unit,
+        })),
+      }));
+    } else {
+      const itemsRes = await pool.query(
+        `SELECT ri.id, ri.supply_id, ri.quantity, ri.unit, s.name AS supply_name, s.unit AS supply_unit
+         FROM recipe_items ri
+         JOIN supplies s ON s.id = ri.supply_id
+         WHERE ri.recipe_id = $1 AND ri.component_id IS NULL
+         ORDER BY ri.created_at ASC`,
+        [req.params.id]
+      );
+      items = itemsRes.rows.map((it) => ({
+        id: it.id,
+        supply_id: it.supply_id,
+        supply_name: it.supply_name,
+        supply_unit: it.supply_unit,
+        quantity: Number(it.quantity),
         unit: it.unit,
-        supply: { unit: it.supply_unit, last_price_clp: it.last_price_clp, reference_qty: it.reference_qty, stock_qty: it.stock_qty },
-      })),
-      equipment,
-      ...energyPrices,
-    });
+      }));
+    }
 
     res.json({
       ok: true,
@@ -115,15 +177,13 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
         equipment_name: row.equipment_name,
         baking_time_minutes: row.baking_time_minutes,
         is_active: row.is_active,
+        is_scalable: row.is_scalable,
+        ref_diameter_cm: row.ref_diameter_cm != null ? Number(row.ref_diameter_cm) : null,
+        ref_height_cm: row.ref_height_cm != null ? Number(row.ref_height_cm) : null,
+        ref_layers: row.ref_layers,
       },
-      items: itemsRes.rows.map((it) => ({
-        id: it.id,
-        supply_id: it.supply_id,
-        supply_name: it.supply_name,
-        supply_unit: it.supply_unit,
-        quantity: Number(it.quantity),
-        unit: it.unit,
-      })),
+      items,
+      components,
       cost,
     });
   } catch (e) {
@@ -131,7 +191,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
   }
 });
 
-// POST /admin/recipes — crear (con insumos opcionales de entrada)
+// POST /admin/recipes — crear (plana con items, o escalable con components)
 router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const parsed = recipeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
@@ -149,16 +209,17 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     await client.query("BEGIN");
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [id, d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null]
+      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        id, d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
+        d.is_scalable,
+        d.is_scalable ? d.ref_diameter_cm : null,
+        d.is_scalable ? d.ref_height_cm : null,
+        d.is_scalable ? d.ref_layers : null,
+      ]
     );
-    for (const item of d.items) {
-      await client.query(
-        `INSERT INTO recipe_items (id, recipe_id, supply_id, quantity, unit) VALUES ($1,$2,$3,$4,$5)`,
-        [crypto.randomUUID(), id, item.supply_id, item.quantity, item.unit]
-      );
-    }
+    await persistRecipeItems(client, id, d);
     await client.query("COMMIT");
     res.json({ ok: true, recipe: { id } });
   } catch (e) {
@@ -174,7 +235,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   }
 });
 
-// PUT /admin/recipes/:id — reemplaza los campos y el set completo de insumos
+// PUT /admin/recipes/:id — reemplaza los campos y el set completo de insumos/componentes
 router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
   const parsed = recipeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
@@ -192,22 +253,30 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
   try {
     await client.query("BEGIN");
     const r = await client.query(
-      `UPDATE recipes SET name=$1, portions=$2, notes=$3, equipment_id=$4, baking_time_minutes=$5, updated_at=NOW()
-       WHERE id=$6 RETURNING id`,
-      [d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null, id]
+      `UPDATE recipes SET name=$1, portions=$2, notes=$3, equipment_id=$4, baking_time_minutes=$5,
+         is_scalable=$6, ref_diameter_cm=$7, ref_height_cm=$8, ref_layers=$9, updated_at=NOW()
+       WHERE id=$10 RETURNING id`,
+      [
+        d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
+        d.is_scalable,
+        d.is_scalable ? d.ref_diameter_cm : null,
+        d.is_scalable ? d.ref_height_cm : null,
+        d.is_scalable ? d.ref_layers : null,
+        id,
+      ]
     );
     if (r.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ ok: false, error: "Receta no encontrada" });
     }
 
-    await client.query(`DELETE FROM recipe_items WHERE recipe_id=$1`, [id]);
-    for (const item of d.items) {
-      await client.query(
-        `INSERT INTO recipe_items (id, recipe_id, supply_id, quantity, unit) VALUES ($1,$2,$3,$4,$5)`,
-        [crypto.randomUUID(), id, item.supply_id, item.quantity, item.unit]
-      );
-    }
+    // Se borra todo lo anterior (componentes → sus items en cascada, y los items
+    // planos sueltos) y se reinserta según el modo actual — así cambiar entre
+    // receta plana y escalable no deja basura del modo anterior.
+    await client.query(`DELETE FROM recipe_components WHERE recipe_id=$1`, [id]);
+    await client.query(`DELETE FROM recipe_items WHERE recipe_id=$1 AND component_id IS NULL`, [id]);
+    await persistRecipeItems(client, id, d);
+
     await client.query("COMMIT");
     res.json({ ok: true });
   } catch (e) {
@@ -252,10 +321,15 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"
 
 // POST /admin/recipes/:id/produce — "Hacer Receta": descuenta insumos y recarga stock del producto vinculado
 router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
-  const schema = z.object({ batches: z.number().int().positive().max(1000) });
+  const schema = z.object({
+    batches: z.number().int().positive().max(1000),
+    target_diameter_cm: z.number().positive().optional(),
+    target_height_cm: z.number().positive().optional(),
+    target_layers: z.number().int().positive().optional(),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  const { batches } = parsed.data;
+  const { batches, target_diameter_cm, target_height_cm, target_layers } = parsed.data;
   const { id } = req.params;
 
   const pool = getPool();
@@ -269,32 +343,69 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
   try {
     await client.query("BEGIN");
 
-    const recipeRes = await client.query(`SELECT id, name, portions FROM recipes WHERE id=$1`, [id]);
+    const recipeRes = await client.query(`SELECT * FROM recipes WHERE id=$1`, [id]);
     if (recipeRes.rowCount === 0) throw new Error("Receta no encontrada");
     const recipe = recipeRes.rows[0];
 
-    const itemsRes = await client.query(
-      `SELECT ri.quantity, ri.unit, s.id AS supply_id, s.name AS supply_name, s.unit AS supply_unit, s.stock_qty
-       FROM recipe_items ri
-       JOIN supplies s ON s.id = ri.supply_id
-       WHERE ri.recipe_id = $1
-       FOR UPDATE OF s`,
-      [id]
-    );
-    if (itemsRes.rowCount === 0) throw new Error("La receta no tiene insumos cargados");
+    let lines; // [{ supply_id, supply_name, supply_unit, quantity, unit }] — quantity YA es para 1 tanda, sin *batches todavía
+    let scaledPortions = Number(recipe.portions) || 1;
+
+    if (recipe.is_scalable) {
+      if (!target_diameter_cm || !target_height_cm || !target_layers) {
+        const err = new Error("Esta receta es escalable — indicá diámetro, alto y capas objetivo antes de producir");
+        err.statusCode = 400;
+        throw err;
+      }
+      const components = await getComponentsForRecipe(client, id);
+      if (components.length === 0) throw new Error("La receta no tiene componentes/insumos cargados");
+      const scaledItems = scaleComponents(components, {
+        refDiameterCm: recipe.ref_diameter_cm,
+        refHeightCm: recipe.ref_height_cm,
+        refLayers: recipe.ref_layers,
+        targetDiameterCm: target_diameter_cm,
+        targetHeightCm: target_height_cm,
+        targetLayers: target_layers,
+      });
+      const volumeRatio = computeVolumeRatio(recipe.ref_diameter_cm, recipe.ref_height_cm, target_diameter_cm, target_height_cm);
+      scaledPortions = Math.max(1, Math.round((Number(recipe.portions) || 1) * volumeRatio));
+      lines = scaledItems.map((it) => ({
+        supply_id: it.supply.id,
+        supply_name: it.supply.name,
+        supply_unit: it.supply.unit,
+        quantity: it.quantity,
+        unit: it.unit,
+      }));
+
+      // Bloquea las filas de insumos involucradas para leer su stock de forma
+      // consistente (el fetch de arriba no las bloqueó).
+      const supplyIds = [...new Set(lines.map((l) => l.supply_id))];
+      const lockRes = await client.query(`SELECT id, stock_qty FROM supplies WHERE id = ANY($1::uuid[]) FOR UPDATE`, [supplyIds]);
+      const stockById = new Map(lockRes.rows.map((row) => [row.id, Number(row.stock_qty)]));
+      lines = lines.map((l) => ({ ...l, stock_qty: stockById.get(l.supply_id) ?? 0 }));
+    } else {
+      const itemsRes = await client.query(
+        `SELECT ri.quantity, ri.unit, s.id AS supply_id, s.name AS supply_name, s.unit AS supply_unit, s.stock_qty
+         FROM recipe_items ri
+         JOIN supplies s ON s.id = ri.supply_id
+         WHERE ri.recipe_id = $1 AND ri.component_id IS NULL
+         FOR UPDATE OF s`,
+        [id]
+      );
+      if (itemsRes.rowCount === 0) throw new Error("La receta no tiene insumos cargados");
+      lines = itemsRes.rows.map((row) => ({ ...row, stock_qty: Number(row.stock_qty) }));
+    }
 
     // Validar stock de TODOS los insumos antes de descontar ninguno.
-    const needed = itemsRes.rows.map((item) => {
-      const neededInSupplyUnit = convertQuantity(Number(item.quantity), item.unit, item.supply_unit) * batches;
-      const available = Number(item.stock_qty);
-      if (neededInSupplyUnit > available) {
+    const needed = lines.map((line) => {
+      const neededInSupplyUnit = convertQuantity(Number(line.quantity), line.unit, line.supply_unit) * batches;
+      if (neededInSupplyUnit > line.stock_qty) {
         const err = new Error(
-          `Stock insuficiente para "${item.supply_name}". Disponible: ${available} ${item.supply_unit}, necesario: ${neededInSupplyUnit} ${item.supply_unit}`
+          `Stock insuficiente para "${line.supply_name}". Disponible: ${line.stock_qty} ${line.supply_unit}, necesario: ${neededInSupplyUnit} ${line.supply_unit}`
         );
         err.statusCode = 409;
         throw err;
       }
-      return { supplyId: item.supply_id, amount: neededInSupplyUnit };
+      return { supplyId: line.supply_id, amount: neededInSupplyUnit };
     });
 
     for (const n of needed) {
@@ -312,13 +423,13 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
         skippedProducts.push(product.name);
         continue;
       }
-      const producedQty = recipe.portions * batches;
+      const producedQty = scaledPortions * batches;
       await client.query(`UPDATE products SET stock_qty = stock_qty + $1, updated_at=NOW() WHERE id=$2`, [producedQty, product.id]);
       restockedProducts.push({ id: product.id, name: product.name, addedQty: producedQty });
     }
 
     await client.query("COMMIT");
-    res.json({ ok: true, batches, restockedProducts, skippedProducts });
+    res.json({ ok: true, batches, scaledPortions, restockedProducts, skippedProducts });
   } catch (e) {
     try {
       await client.query("ROLLBACK");

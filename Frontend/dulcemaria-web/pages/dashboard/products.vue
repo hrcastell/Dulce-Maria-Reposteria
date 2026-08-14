@@ -258,6 +258,10 @@ interface Product {
   images?: any[]
   recipe_id?: string | null
   recipe_name?: string | null
+  recipe_is_scalable?: boolean
+  target_diameter_cm?: number | null
+  target_height_cm?: number | null
+  target_layers?: number | null
   cost_from_recipe?: boolean
 }
 

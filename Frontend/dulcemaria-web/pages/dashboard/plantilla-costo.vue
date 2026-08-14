@@ -3,7 +3,7 @@
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
       <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Recetario</h1>
+        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Plantilla de Costo</h1>
         <p class="mt-1 text-warm-500">Costeo de recetas a partir del precio de los insumos</p>
       </div>
       <button
@@ -65,7 +65,10 @@
       >
         <div class="flex items-start justify-between gap-2 mb-3">
           <h3 class="font-semibold text-warm-800">{{ r.name }}</h3>
-          <span v-if="!r.is_active" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-warm-100 text-warm-500">Inactiva</span>
+          <div class="flex flex-col items-end gap-1">
+            <span v-if="r.is_scalable" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-primary-100 text-primary-700">🎂 Escalable</span>
+            <span v-if="!r.is_active" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-warm-100 text-warm-500">Inactiva</span>
+          </div>
         </div>
         <div class="space-y-1.5 text-sm">
           <div class="flex items-center justify-between">
@@ -73,7 +76,7 @@
             <span class="font-medium text-warm-700">{{ r.itemCount }}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-warm-500">Costo total</span>
+            <span class="text-warm-500">Costo total{{ r.is_scalable ? ' (referencia)' : '' }}</span>
             <span class="font-semibold text-warm-800">${{ formatPrice(r.totalCost) }}</span>
           </div>
           <div class="flex items-center justify-between">
@@ -120,7 +123,9 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-warm-700 mb-1">Porciones *</label>
+          <label class="block text-sm font-medium text-warm-700 mb-1">
+            Porciones {{ form.is_scalable ? '(al tamaño de referencia) *' : '*' }}
+          </label>
           <input
             v-model.number="form.portions"
             type="number"
@@ -141,8 +146,35 @@
           ></textarea>
         </div>
 
-        <!-- Insumos -->
+        <!-- Escalable por molde -->
         <div class="pt-4 border-t border-warm-100">
+          <label class="flex items-center gap-3 cursor-pointer mb-3 select-none">
+            <div class="relative inline-flex items-center cursor-pointer">
+              <input v-model="form.is_scalable" type="checkbox" :disabled="!canWrite" class="sr-only peer">
+              <div class="w-11 h-6 bg-warm-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+            </div>
+            <span class="text-sm font-medium text-warm-700">🎂 Escalable por molde (torta por capas)</span>
+          </label>
+          <p class="text-xs text-warm-500 mb-3">Las cantidades se calculan solas para otro diámetro/alto de molde o cantidad de capas, a partir de un tamaño de referencia.</p>
+
+          <div v-if="form.is_scalable" class="animate-fadeIn grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-warm-600 mb-1">Diámetro ref. (cm)</label>
+              <input v-model.number="form.ref_diameter_cm" type="number" min="0" step="any" :disabled="!canWrite" class="input-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-warm-600 mb-1">Alto ref. (cm)</label>
+              <input v-model.number="form.ref_height_cm" type="number" min="0" step="any" :disabled="!canWrite" class="input-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-warm-600 mb-1">Capas ref.</label>
+              <input v-model.number="form.ref_layers" type="number" min="1" :disabled="!canWrite" class="input-sm">
+            </div>
+          </div>
+        </div>
+
+        <!-- Insumos (receta plana) -->
+        <div v-if="!form.is_scalable" class="pt-4 border-t border-warm-100">
           <h4 class="text-sm font-semibold text-warm-700 mb-3">Insumos</h4>
 
           <div v-if="form.items.length > 0" class="space-y-2 mb-3">
@@ -181,6 +213,45 @@
             </div>
           </div>
           <p v-if="itemError" class="text-xs text-error-600 mt-1">{{ itemError }}</p>
+        </div>
+
+        <!-- Componentes (receta escalable) -->
+        <div v-else class="pt-4 border-t border-warm-100">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="text-sm font-semibold text-warm-700">Componentes (Mezcla, Almíbar, Relleno...)</h4>
+            <button v-if="canWrite" type="button" class="text-sm font-medium text-primary-600 hover:text-primary-700" @click="addComponent">
+              + Agregar componente
+            </button>
+          </div>
+
+          <div v-if="form.components.length === 0" class="text-center py-4 bg-warm-50 rounded-xl border border-dashed border-warm-200 text-xs text-warm-500">
+            Sin componentes todavía. Ej: "Mezcla", "Almíbar", "Relleno", "Cobertura".
+          </div>
+
+          <div v-for="(comp, cIdx) in form.components" :key="comp._key" class="mb-3 p-3 bg-warm-50 rounded-xl border border-warm-100">
+            <div class="flex items-center gap-2 mb-2">
+              <input v-model="comp.name" type="text" :disabled="!canWrite" placeholder="Nombre del componente" class="input-sm flex-1">
+              <select v-model="comp.layer_scale_basis" :disabled="!canWrite" class="input-sm w-40">
+                <option value="NONE">No depende de capas</option>
+                <option value="CAKE">Escala con capas de masa</option>
+                <option value="FILLING">Escala con capas de relleno</option>
+              </select>
+              <button v-if="canWrite" type="button" class="text-warm-400 hover:text-error-600 flex-shrink-0" @click="form.components.splice(cIdx, 1)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div v-if="comp.items.length > 0" class="space-y-1.5 mb-2">
+              <div v-for="(item, iIdx) in comp.items" :key="item._key" class="flex items-center justify-between px-3 py-1.5 bg-white rounded-lg border border-warm-100 text-sm">
+                <span><span class="font-medium text-warm-800">{{ item.supply_name }}</span> <span class="text-warm-500">— {{ item.quantity }} {{ item.unit }}</span></span>
+                <button v-if="canWrite" type="button" class="text-warm-400 hover:text-error-600" @click="comp.items.splice(iIdx, 1)">×</button>
+              </div>
+            </div>
+
+            <button v-if="canWrite" type="button" class="text-xs font-medium text-primary-600 hover:text-primary-700" @click="openAddComponentItemModal(cIdx)">
+              + Agregar insumo a este componente
+            </button>
+          </div>
         </div>
 
         <!-- Energía (opcional) -->
@@ -246,13 +317,22 @@
         </div>
 
         <!-- Costo en vivo (ya guardado) -->
-        <div v-if="editingId && liveCost" class="pt-4 border-t border-warm-100 space-y-2">
+        <div v-if="editingId && liveCost" class="pt-4 border-t border-warm-100 space-y-3">
+          <div v-if="form.is_scalable" class="p-3 bg-white rounded-xl border border-dashed border-warm-200">
+            <p class="text-xs font-medium text-warm-600 mb-2">Vista previa — probá otro tamaño</p>
+            <div class="grid grid-cols-3 gap-2">
+              <input v-model.number="previewDiameter" type="number" min="0" step="any" placeholder="Diám. cm" class="input-sm" @input="onPreviewInput">
+              <input v-model.number="previewHeight" type="number" min="0" step="any" placeholder="Alto cm" class="input-sm" @input="onPreviewInput">
+              <input v-model.number="previewLayers" type="number" min="1" placeholder="Capas" class="input-sm" @input="onPreviewInput">
+            </div>
+          </div>
+
           <div class="flex items-center justify-between p-3 bg-warm-50 rounded-xl border border-warm-100">
             <span class="text-sm font-medium text-warm-700">Costo total</span>
             <span class="text-lg font-semibold text-warm-800">${{ formatPrice(liveCost.totalCost) }}</span>
           </div>
           <div class="flex items-center justify-between text-sm px-1">
-            <span class="text-warm-500">Costo / porción</span>
+            <span class="text-warm-500">Costo / porción{{ liveCost.scaledPortions ? ` (${liveCost.scaledPortions} porciones)` : '' }}</span>
             <span class="font-medium text-warm-700">${{ formatPrice(liveCost.costPerPortion) }}</span>
           </div>
           <div class="flex items-center justify-between text-sm px-1">
@@ -280,6 +360,38 @@
       </div>
     </SidePanel>
 
+    <!-- Modal: agregar insumo a un componente -->
+    <Modal
+      v-model="showComponentItemModal"
+      title="Agregar Insumo al Componente"
+      submit-text="Agregar"
+      @submit="confirmComponentItemModal"
+    >
+      <div class="space-y-3">
+        <div v-if="componentItemError" class="rounded-xl bg-error-50 p-3 border border-error-100 text-sm text-error-700">{{ componentItemError }}</div>
+        <div class="relative">
+          <input
+            v-model="componentItemDraft.search"
+            type="text"
+            class="block w-full px-3 py-2 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            placeholder="Buscar insumo..."
+            @input="onComponentItemSearchInput"
+            @focus="componentItemDraft.showDropdown = true"
+          >
+          <div v-if="componentItemDraft.showDropdown && componentItemDraft.results.length > 0" class="absolute z-10 mt-1 w-full bg-white border border-warm-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+            <button v-for="s in componentItemDraft.results" :key="s.id" type="button" class="block w-full text-left px-3 py-2 hover:bg-warm-50 text-sm" @click="selectComponentItemSupply(s)">
+              {{ s.name }} <span class="text-warm-400">({{ s.unit || 'sin unidad' }})</span>
+            </button>
+          </div>
+        </div>
+        <div v-if="componentItemDraft.supply_id" class="flex items-center gap-2">
+          <span class="text-sm font-medium text-warm-700 flex-1 truncate">{{ componentItemDraft.supply_name }}</span>
+          <input v-model.number="componentItemDraft.quantity" type="number" min="0" step="any" class="w-24 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Cant.">
+          <input v-model="componentItemDraft.unit" type="text" class="w-24 px-2 py-1.5 border border-warm-200 rounded-lg text-sm" placeholder="Unidad">
+        </div>
+      </div>
+    </Modal>
+
     <!-- Modal: Hacer Receta -->
     <Modal
       v-model="showProduceModal"
@@ -293,6 +405,22 @@
           <p class="text-sm text-error-700">{{ produceError }}</p>
         </div>
         <p class="text-sm text-warm-600">Vas a descontar los insumos de <strong>{{ editingName }}</strong> y sumar stock al producto vinculado, si tiene.</p>
+
+        <div v-if="form.is_scalable" class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-xs font-medium text-warm-600 mb-1">Diámetro (cm)</label>
+            <input v-model.number="produceDiameter" type="number" min="0" step="any" class="input-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-warm-600 mb-1">Alto (cm)</label>
+            <input v-model.number="produceHeight" type="number" min="0" step="any" class="input-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-warm-600 mb-1">Capas</label>
+            <input v-model.number="produceLayers" type="number" min="1" class="input-sm">
+          </div>
+        </div>
+
         <div>
           <label class="block text-sm font-medium text-warm-700 mb-1">¿Cuántas tandas?</label>
           <input
@@ -302,7 +430,7 @@
             :max="liveCost?.maxBatches || undefined"
             class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400"
           >
-          <p v-if="liveCost" class="text-xs text-warm-500 mt-1">Stock alcanza para {{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'tanda' : 'tandas' }}</p>
+          <p v-if="liveCost" class="text-xs text-warm-500 mt-1">Stock alcanza para {{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'tanda' : 'tandas' }} a este tamaño</p>
         </div>
       </div>
     </Modal>
@@ -317,13 +445,14 @@ definePageMeta({
   middleware: 'auth'
 })
 
-useHead({ title: 'Recetario | Dulce María' })
+useHead({ title: 'Plantilla de Costo | Dulce María' })
 
 interface RecipeCard {
   id: string
   name: string
   portions: number
   is_active: boolean
+  is_scalable: boolean
   itemCount: number
   totalCost: number
   costPerPortion: number
@@ -421,6 +550,13 @@ interface DraftItem {
   unit: string
 }
 
+interface Component {
+  _key: string
+  name: string
+  layer_scale_basis: 'CAKE' | 'FILLING' | 'NONE'
+  items: DraftItem[]
+}
+
 const createEmptyForm = () => ({
   name: '',
   portions: 1,
@@ -428,9 +564,18 @@ const createEmptyForm = () => ({
   equipment_id: null as string | null,
   baking_time_minutes: null as number | null,
   is_active: true,
+  is_scalable: false,
+  ref_diameter_cm: null as number | null,
+  ref_height_cm: null as number | null,
+  ref_layers: null as number | null,
   items: [] as DraftItem[],
+  components: [] as Component[],
 })
 const form = ref(createEmptyForm())
+
+const previewDiameter = ref<number | null>(null)
+const previewHeight = ref<number | null>(null)
+const previewLayers = ref<number | null>(null)
 
 const openCreatePanel = () => {
   editingId.value = null
@@ -450,7 +595,7 @@ const openEditPanel = async (r: RecipeCard) => {
   showNewEquipment.value = false
   showPanel.value = true
   try {
-    const res = await api.get<{ ok: boolean; recipe: any; items: any[]; cost: any }>(`/admin/recipes/${r.id}`)
+    const res = await api.get<{ ok: boolean; recipe: any; items: any[] | null; components: any[] | null; cost: any }>(`/admin/recipes/${r.id}`)
     if (res.ok) {
       form.value = {
         name: res.recipe.name,
@@ -459,23 +604,60 @@ const openEditPanel = async (r: RecipeCard) => {
         equipment_id: res.recipe.equipment_id,
         baking_time_minutes: res.recipe.baking_time_minutes,
         is_active: res.recipe.is_active,
-        items: res.items.map((it: any) => ({
+        is_scalable: res.recipe.is_scalable,
+        ref_diameter_cm: res.recipe.ref_diameter_cm,
+        ref_height_cm: res.recipe.ref_height_cm,
+        ref_layers: res.recipe.ref_layers,
+        items: (res.items || []).map((it: any) => ({
           _key: it.id,
           supply_id: it.supply_id,
           supply_name: it.supply_name,
           quantity: it.quantity,
           unit: it.unit,
         })),
+        components: (res.components || []).map((c: any) => ({
+          _key: c.id,
+          name: c.name,
+          layer_scale_basis: c.layer_scale_basis,
+          items: c.items.map((it: any) => ({
+            _key: crypto.randomUUID(),
+            supply_id: it.supply_id,
+            supply_name: it.supply_name,
+            quantity: it.quantity,
+            unit: it.unit,
+          })),
+        })),
       }
       useEquipment.value = !!res.recipe.equipment_id
       liveCost.value = res.cost
+      previewDiameter.value = res.recipe.ref_diameter_cm
+      previewHeight.value = res.recipe.ref_height_cm
+      previewLayers.value = res.recipe.ref_layers
     }
   } catch (e: any) {
     panelError.value = e?.data?.error || 'Error al cargar la receta'
   }
 }
 
-// ── Agregar insumo a la receta ──
+// Recalcula el costo en vivo para el tamaño de vista previa (solo recetas escalables ya guardadas).
+let previewTimer: any = null
+const onPreviewInput = () => {
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(recalculatePreview, 350)
+}
+
+const recalculatePreview = async () => {
+  if (!editingId.value || !previewDiameter.value || !previewHeight.value || !previewLayers.value) return
+  try {
+    const qs = `?target_diameter_cm=${previewDiameter.value}&target_height_cm=${previewHeight.value}&target_layers=${previewLayers.value}`
+    const res = await api.get<{ ok: boolean; cost: any }>(`/admin/recipes/${editingId.value}${qs}`)
+    if (res.ok) liveCost.value = res.cost
+  } catch (e: any) {
+    panelError.value = e?.data?.error || 'Error al recalcular el costo'
+  }
+}
+
+// ── Agregar insumo a la receta (modo plano) ──
 const itemError = ref('')
 const draftItem = ref({
   search: '',
@@ -532,22 +714,120 @@ const addDraftItem = () => {
   draftItem.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: '', seq: draftItem.value.seq }
 }
 
+// ── Componentes (modo escalable) ──
+const addComponent = () => {
+  form.value.components.push({ _key: crypto.randomUUID(), name: '', layer_scale_basis: 'NONE', items: [] })
+}
+
+const showComponentItemModal = ref(false)
+const componentItemError = ref('')
+const activeComponentIndex = ref<number | null>(null)
+const componentItemDraft = ref({
+  search: '',
+  results: [] as any[],
+  showDropdown: false,
+  supply_id: '',
+  supply_name: '',
+  quantity: null as number | null,
+  unit: '',
+  seq: 0,
+})
+
+const openAddComponentItemModal = (componentIndex: number) => {
+  activeComponentIndex.value = componentIndex
+  componentItemError.value = ''
+  componentItemDraft.value = { search: '', results: [], showDropdown: false, supply_id: '', supply_name: '', quantity: null, unit: '', seq: 0 }
+  showComponentItemModal.value = true
+}
+
+let componentItemSearchTimer: any = null
+const onComponentItemSearchInput = () => {
+  componentItemDraft.value.showDropdown = true
+  clearTimeout(componentItemSearchTimer)
+  componentItemSearchTimer = setTimeout(searchComponentItemSupplies, 250)
+}
+
+const searchComponentItemSupplies = async () => {
+  const seq = ++componentItemDraft.value.seq
+  try {
+    const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/supplies?q=${encodeURIComponent(componentItemDraft.value.search.trim())}`)
+    if (seq !== componentItemDraft.value.seq) return
+    if (res.ok) componentItemDraft.value.results = res.items
+  } catch {
+    if (seq !== componentItemDraft.value.seq) return
+    componentItemDraft.value.results = []
+  }
+}
+
+const selectComponentItemSupply = (s: any) => {
+  componentItemDraft.value.supply_id = s.id
+  componentItemDraft.value.supply_name = s.name
+  componentItemDraft.value.unit = s.unit || ''
+  componentItemDraft.value.search = ''
+  componentItemDraft.value.results = []
+  componentItemDraft.value.showDropdown = false
+}
+
+const confirmComponentItemModal = () => {
+  componentItemError.value = ''
+  if (activeComponentIndex.value === null) return
+  const d = componentItemDraft.value
+  if (!d.supply_id) { componentItemError.value = 'Elegí un insumo'; return }
+  if (!d.quantity || d.quantity <= 0) { componentItemError.value = 'La cantidad debe ser mayor a 0'; return }
+  if (!d.unit.trim()) { componentItemError.value = 'Ingresá la unidad (ej: g, ml, unidad)'; return }
+
+  form.value.components[activeComponentIndex.value].items.push({
+    _key: crypto.randomUUID(),
+    supply_id: d.supply_id,
+    supply_name: d.supply_name,
+    quantity: d.quantity,
+    unit: d.unit.trim(),
+  })
+  showComponentItemModal.value = false
+}
+
 const saveRecipe = async () => {
   panelError.value = ''
   if (!form.value.name.trim()) { panelError.value = 'El nombre es requerido'; return }
   if (!form.value.portions || form.value.portions <= 0) { panelError.value = 'Las porciones deben ser mayor a 0'; return }
-  if (form.value.items.length === 0) { panelError.value = 'Agregá al menos un insumo'; return }
+
+  if (form.value.is_scalable) {
+    if (!form.value.ref_diameter_cm || !form.value.ref_height_cm || !form.value.ref_layers) {
+      panelError.value = 'Completá diámetro, alto y capas de referencia'
+      return
+    }
+    if (form.value.components.length === 0) { panelError.value = 'Agregá al menos un componente'; return }
+    if (form.value.components.some((c) => !c.name.trim())) { panelError.value = 'Todos los componentes necesitan nombre'; return }
+    if (form.value.components.every((c) => c.items.length === 0)) { panelError.value = 'Agregá al menos un insumo a algún componente'; return }
+  } else if (form.value.items.length === 0) {
+    panelError.value = 'Agregá al menos un insumo'
+    return
+  }
 
   saving.value = true
   try {
-    const payload = {
+    const payload: any = {
       name: form.value.name.trim(),
       portions: form.value.portions,
       notes: form.value.notes || null,
       equipment_id: useEquipment.value ? form.value.equipment_id : null,
       baking_time_minutes: useEquipment.value ? form.value.baking_time_minutes : null,
-      items: form.value.items.map((it) => ({ supply_id: it.supply_id, quantity: it.quantity, unit: it.unit })),
+      is_scalable: form.value.is_scalable,
     }
+    if (form.value.is_scalable) {
+      payload.ref_diameter_cm = form.value.ref_diameter_cm
+      payload.ref_height_cm = form.value.ref_height_cm
+      payload.ref_layers = form.value.ref_layers
+      payload.components = form.value.components.map((c) => ({
+        name: c.name.trim(),
+        layer_scale_basis: c.layer_scale_basis,
+        items: c.items.map((it) => ({ supply_id: it.supply_id, quantity: it.quantity, unit: it.unit })),
+      }))
+      payload.items = []
+    } else {
+      payload.items = form.value.items.map((it) => ({ supply_id: it.supply_id, quantity: it.quantity, unit: it.unit }))
+    }
+
     if (editingId.value) {
       await api.put(`/admin/recipes/${editingId.value}`, payload)
       await api.patch(`/admin/recipes/${editingId.value}`, { is_active: form.value.is_active })
@@ -566,11 +846,17 @@ const saveRecipe = async () => {
 // ── Hacer Receta ──
 const showProduceModal = ref(false)
 const produceBatches = ref(1)
+const produceDiameter = ref<number | null>(null)
+const produceHeight = ref<number | null>(null)
+const produceLayers = ref<number | null>(null)
 const producing = ref(false)
 const produceError = ref('')
 
 const openProduceModal = () => {
   produceBatches.value = 1
+  produceDiameter.value = previewDiameter.value
+  produceHeight.value = previewHeight.value
+  produceLayers.value = previewLayers.value
   produceError.value = ''
   showProduceModal.value = true
 }
@@ -580,9 +866,15 @@ const confirmProduce = async () => {
   producing.value = true
   produceError.value = ''
   try {
+    const body: any = { batches: produceBatches.value }
+    if (form.value.is_scalable) {
+      body.target_diameter_cm = produceDiameter.value
+      body.target_height_cm = produceHeight.value
+      body.target_layers = produceLayers.value
+    }
     const res = await api.post<{ ok: boolean; restockedProducts: any[]; skippedProducts: string[] }>(
       `/admin/recipes/${editingId.value}/produce`,
-      { batches: produceBatches.value }
+      body
     )
     if (res.ok) {
       showProduceModal.value = false
@@ -611,3 +903,9 @@ onMounted(() => {
   loadEquipment()
 })
 </script>
+
+<style scoped>
+.input-sm {
+  @apply block w-full px-2.5 py-2 border border-warm-200 rounded-lg text-sm text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:bg-gray-100;
+}
+</style>
