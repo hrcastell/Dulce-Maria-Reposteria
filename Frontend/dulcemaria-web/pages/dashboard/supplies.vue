@@ -527,7 +527,9 @@
           <!-- Creación inline de insumo -->
           <div v-if="draftExpenseItem._showCreateSupply" class="mt-2 p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
             <p class="text-xs text-warm-600">Nuevo insumo: <span class="font-semibold">{{ draftExpenseItem._supplySearch }}</span></p>
-            <input v-model="draftExpenseItem._createUnit" type="text" placeholder="Unidad (kg, lt, unidad...)" class="input text-sm">
+            <select v-model="draftExpenseItem._createUnit" class="input text-sm">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
             <div class="flex gap-2">
               <button
                 type="button"
@@ -542,16 +544,23 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
           <div>
             <label class="label">Cantidad *</label>
             <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
           </div>
           <div>
-            <label class="label">Precio Unitario (CLP, c/IVA) *</label>
+            <label class="label">Unidad *</label>
+            <select v-model="draftExpenseItem.unit" class="input">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Precio por unidad (CLP, c/IVA) *</label>
             <input v-model.number="draftExpenseItem.unit_price_clp" type="number" min="0" class="input">
           </div>
         </div>
+        <p class="text-xs text-warm-500">Ej: si compraste 10 kg, poné cantidad 10 y unidad Kilogramos — el sistema convierte solo a la unidad del insumo.</p>
 
         <div class="flex justify-between items-center pt-3 border-t border-warm-100 text-sm">
           <span class="text-warm-500">Total línea:</span>
@@ -723,6 +732,7 @@ interface ExpenseItem {
   supply_id: string
   product_name: string
   quantity: number
+  unit: string
   unit_price_clp: number
   total_clp: number
 }
@@ -731,6 +741,7 @@ interface DraftExpenseItem {
   supply_id: string
   product_name: string
   quantity: number | null
+  unit: string
   unit_price_clp: number | null
   _supplySearch: string
   _searchResults: any[]
@@ -745,13 +756,14 @@ const createEmptyExpenseItem = (): DraftExpenseItem => ({
   supply_id: '',
   product_name: '',
   quantity: 1,
+  unit: 'unidad',
   unit_price_clp: null,
   _supplySearch: '',
   _searchResults: [],
   _searchSeq: 0,
   _showSupplyDropdown: false,
   _showCreateSupply: false,
-  _createUnit: '',
+  _createUnit: 'unidad',
   _creatingSupply: false,
 })
 
@@ -902,11 +914,12 @@ const filteredSuppliesFor = (item: DraftExpenseItem) => item._searchResults
 const selectSupplyForItem = (item: DraftExpenseItem, supply: any) => {
   item.supply_id = supply.id
   item.product_name = supply.name
+  item.unit = supply.unit || 'unidad'
   item._supplySearch = ''
   item._searchResults = []
   item._showSupplyDropdown = false
   item._showCreateSupply = false
-  item._createUnit = ''
+  item._createUnit = 'unidad'
   if (supply.last_price_clp && !item.unit_price_clp) {
     item.unit_price_clp = supply.last_price_clp
   }
@@ -951,6 +964,7 @@ const openEditExpenseItemModal = (index: number) => {
     supply_id: original.supply_id,
     product_name: original.product_name,
     quantity: original.quantity,
+    unit: original.unit || 'unidad',
     unit_price_clp: original.unit_price_clp,
   }
   expenseItemModalError.value = ''
@@ -983,6 +997,7 @@ const confirmExpenseItemModal = () => {
     supply_id: d.supply_id,
     product_name: d.product_name,
     quantity: d.quantity,
+    unit: d.unit,
     unit_price_clp: d.unit_price_clp,
     total_clp: Math.round(d.quantity * d.unit_price_clp),
   }

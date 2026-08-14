@@ -317,6 +317,11 @@ async function runCompleteMigrations() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_expense ON expense_record_items(expense_record_id);`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_supply ON expense_record_items(supply_id);`,
+    // unit — en qué unidad se compró esta línea (puede diferir de la unidad
+    // base del insumo, ej: comprás "10 kg" de algo cuyo stock se lleva en
+    // gramos). Se convierte con convertQuantity antes de sumar/revertir stock.
+    // Nullable: registros históricos de antes de este campo no lo tienen.
+    `ALTER TABLE expense_record_items ADD COLUMN IF NOT EXISTS unit VARCHAR(20);`,
 
     // ============================================
     // Tabla: kitchen_equipment (hornos, etc. — consumo de gas/electricidad)
@@ -352,6 +357,11 @@ async function runCompleteMigrations() {
     `CREATE TRIGGER trg_recipes_updated_at
       BEFORE UPDATE ON recipes
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // Modo de costeo manual — para costear sin cargar insumos (el usuario
+    // tipea el costo total directamente).
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS cost_mode VARCHAR(10) NOT NULL DEFAULT 'INSUMOS' CHECK (cost_mode IN ('INSUMOS','MANUAL'));`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS manual_cost_clp INT CHECK (manual_cost_clp IS NULL OR manual_cost_clp >= 0);`,
 
     // Escalado por molde (torta por capas) — receta "patrón" calibrada para un
     // molde/capas de referencia, que luego se recalcula para otro tamaño.

@@ -34,19 +34,28 @@ const recipeSchema = z
     notes: z.string().max(1000).optional().nullable(),
     equipment_id: z.string().uuid().optional().nullable(),
     baking_time_minutes: z.number().nonnegative().optional().nullable(),
+    cost_mode: z.enum(["INSUMOS", "MANUAL"]).default("INSUMOS"),
+    manual_cost_clp: z.number().int().nonnegative().optional().nullable(), // usado cuando cost_mode=MANUAL
     is_scalable: z.boolean().default(false),
     ref_diameter_cm: z.number().positive().optional().nullable(),
     ref_height_cm: z.number().positive().optional().nullable(),
     ref_layers: z.number().int().positive().optional().nullable(),
-    items: z.array(flatItemSchema).max(100).default([]), // usado cuando is_scalable=false
-    components: z.array(componentSchema).max(20).default([]), // usado cuando is_scalable=true
+    items: z.array(flatItemSchema).max(100).default([]), // usado cuando cost_mode=INSUMOS e is_scalable=false
+    components: z.array(componentSchema).max(20).default([]), // usado cuando cost_mode=INSUMOS e is_scalable=true
+  })
+  .refine((d) => d.cost_mode !== "MANUAL" || !d.is_scalable, {
+    message: "El modo manual no es compatible con el escalado por molde",
+  })
+  .refine((d) => d.cost_mode !== "MANUAL" || (d.manual_cost_clp != null && d.manual_cost_clp > 0), {
+    message: "El modo manual necesita un costo total mayor a 0",
   })
   .refine((d) => !d.is_scalable || (d.ref_diameter_cm && d.ref_height_cm && d.ref_layers), {
     message: "Una receta escalable necesita diámetro, alto y capas de referencia",
   });
 
-/** Persiste componentes+items (escalable) o items planos (no escalable) para una receta ya creada. */
+/** Persiste componentes+items (escalable) o items planos (no escalable) para una receta ya creada. En modo manual no hay nada que persistir. */
 async function persistRecipeItems(client, recipeId, d) {
+  if (d.cost_mode === "MANUAL") return;
   if (d.is_scalable) {
     for (let i = 0; i < d.components.length; i++) {
       const comp = d.components[i];
@@ -78,7 +87,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT r.id, r.name, r.portions, r.is_active, r.is_scalable
+      `SELECT r.id, r.name, r.portions, r.is_active, r.is_scalable, r.cost_mode
        FROM recipes r
        ${search ? "WHERE r.name ILIKE $1" : "WHERE r.is_active = true"}
        ORDER BY r.name ASC`,
@@ -95,6 +104,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
         portions: row.portions,
         is_active: row.is_active,
         is_scalable: row.is_scalable,
+        is_manual: row.cost_mode === "MANUAL",
         itemCount: cost.itemCount,
         totalCost: cost.totalCost,
         costPerPortion: cost.costPerPortion,
@@ -133,7 +143,9 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
 
     let items = null;
     let components = null;
-    if (row.is_scalable) {
+    if (row.cost_mode === "MANUAL") {
+      // Sin insumos que traer.
+    } else if (row.is_scalable) {
       const comps = await getComponentsForRecipe(pool, req.params.id);
       components = comps.map((c) => ({
         id: c.id,
@@ -177,6 +189,8 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
         equipment_name: row.equipment_name,
         baking_time_minutes: row.baking_time_minutes,
         is_active: row.is_active,
+        cost_mode: row.cost_mode,
+        manual_cost_clp: row.manual_cost_clp,
         is_scalable: row.is_scalable,
         ref_diameter_cm: row.ref_diameter_cm != null ? Number(row.ref_diameter_cm) : null,
         ref_height_cm: row.ref_height_cm != null ? Number(row.ref_height_cm) : null,
@@ -209,10 +223,12 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     await client.query("BEGIN");
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, cost_mode, manual_cost_clp, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         id, d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
+        d.cost_mode,
+        d.cost_mode === "MANUAL" ? d.manual_cost_clp : null,
         d.is_scalable,
         d.is_scalable ? d.ref_diameter_cm : null,
         d.is_scalable ? d.ref_height_cm : null,
@@ -254,10 +270,12 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
     await client.query("BEGIN");
     const r = await client.query(
       `UPDATE recipes SET name=$1, portions=$2, notes=$3, equipment_id=$4, baking_time_minutes=$5,
-         is_scalable=$6, ref_diameter_cm=$7, ref_height_cm=$8, ref_layers=$9, updated_at=NOW()
-       WHERE id=$10 RETURNING id`,
+         cost_mode=$6, manual_cost_clp=$7, is_scalable=$8, ref_diameter_cm=$9, ref_height_cm=$10, ref_layers=$11, updated_at=NOW()
+       WHERE id=$12 RETURNING id`,
       [
         d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
+        d.cost_mode,
+        d.cost_mode === "MANUAL" ? d.manual_cost_clp : null,
         d.is_scalable,
         d.is_scalable ? d.ref_diameter_cm : null,
         d.is_scalable ? d.ref_height_cm : null,
@@ -347,10 +365,12 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
     if (recipeRes.rowCount === 0) throw new Error("Receta no encontrada");
     const recipe = recipeRes.rows[0];
 
-    let lines; // [{ supply_id, supply_name, supply_unit, quantity, unit }] — quantity YA es para 1 tanda, sin *batches todavía
+    let lines = []; // [{ supply_id, supply_name, supply_unit, quantity, unit }] — quantity YA es para 1 tanda, sin *batches todavía
     let scaledPortions = Number(recipe.portions) || 1;
 
-    if (recipe.is_scalable) {
+    if (recipe.cost_mode === "MANUAL") {
+      // Modo manual: no hay insumos que descontar, solo se recarga el producto vinculado.
+    } else if (recipe.is_scalable) {
       if (!target_diameter_cm || !target_height_cm || !target_layers) {
         const err = new Error("Esta receta es escalable — indicá diámetro, alto y capas objetivo antes de producir");
         err.statusCode = 400;

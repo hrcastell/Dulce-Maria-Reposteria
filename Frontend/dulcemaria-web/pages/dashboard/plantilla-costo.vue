@@ -66,12 +66,13 @@
         <div class="flex items-start justify-between gap-2 mb-3">
           <h3 class="font-semibold text-warm-800">{{ r.name }}</h3>
           <div class="flex flex-col items-end gap-1">
+            <span v-if="r.is_manual" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-warm-100 text-warm-600">✍️ Manual</span>
             <span v-if="r.is_scalable" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-primary-100 text-primary-700">🎂 Escalable</span>
             <span v-if="!r.is_active" class="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-warm-100 text-warm-500">Inactiva</span>
           </div>
         </div>
         <div class="space-y-1.5 text-sm">
-          <div class="flex items-center justify-between">
+          <div v-if="!r.is_manual" class="flex items-center justify-between">
             <span class="text-warm-500">Insumos</span>
             <span class="font-medium text-warm-700">{{ r.itemCount }}</span>
           </div>
@@ -84,7 +85,7 @@
             <span class="font-medium text-warm-700">${{ formatPrice(r.costPerPortion) }}</span>
           </div>
         </div>
-        <div class="mt-4 pt-3 border-t border-warm-100 flex items-center justify-between">
+        <div v-if="r.maxBatches !== null" class="mt-4 pt-3 border-t border-warm-100 flex items-center justify-between">
           <span class="text-xs text-warm-500">Alcanza para</span>
           <span
             :class="r.maxBatches > 0 ? 'text-success-700 bg-success-100' : 'text-error-700 bg-error-100'"
@@ -146,6 +147,49 @@
           ></textarea>
         </div>
 
+        <!-- Modo de costeo -->
+        <div class="pt-4 border-t border-warm-100">
+          <label class="block text-sm font-medium text-warm-700 mb-2">¿Cómo calculamos el costo?</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              :disabled="!canWrite"
+              :class="form.cost_mode === 'INSUMOS' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 border border-warm-200'"
+              class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
+              @click="setCostMode('INSUMOS')"
+            >
+              🧂 Con insumos
+            </button>
+            <button
+              type="button"
+              :disabled="!canWrite"
+              :class="form.cost_mode === 'MANUAL' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 border border-warm-200'"
+              class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
+              @click="setCostMode('MANUAL')"
+            >
+              ✍️ Manual
+            </button>
+          </div>
+        </div>
+
+        <!-- Costo manual (sin insumos) -->
+        <div v-if="form.cost_mode === 'MANUAL'" class="pt-4 border-t border-warm-100">
+          <label class="block text-sm font-medium text-warm-700 mb-1">Costo total (CLP) *</label>
+          <div class="relative">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-warm-400">$</span>
+            <input
+              v-model.number="form.manual_cost_clp"
+              type="number"
+              min="0"
+              :disabled="!canWrite"
+              class="block w-full pl-8 pr-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:bg-gray-100"
+              placeholder="6073"
+            >
+          </div>
+          <p class="text-xs text-warm-500 mt-1">Sin insumos vinculados — cargás el costo total a mano, se divide entre las porciones.</p>
+        </div>
+
+        <template v-else>
         <!-- Escalable por molde -->
         <div class="pt-4 border-t border-warm-100">
           <label class="flex items-center gap-3 cursor-pointer mb-3 select-none">
@@ -317,6 +361,7 @@
             </div>
           </div>
         </div>
+        </template>
 
         <!-- Costo en vivo (ya guardado) -->
         <div v-if="editingId && liveCost" class="pt-4 border-t border-warm-100 space-y-3">
@@ -337,16 +382,17 @@
             <span class="text-warm-500">Costo / porción{{ liveCost.scaledPortions ? ` (${liveCost.scaledPortions} porciones)` : '' }}</span>
             <span class="font-medium text-warm-700">${{ formatPrice(liveCost.costPerPortion) }}</span>
           </div>
-          <div class="flex items-center justify-between text-sm px-1">
+          <div v-if="liveCost.maxBatches !== null" class="flex items-center justify-between text-sm px-1">
             <span class="text-warm-500">Alcanza para</span>
             <span class="font-medium text-warm-700">{{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'vez' : 'veces' }}</span>
           </div>
+          <p v-else class="text-xs text-warm-500 px-1">Modo manual — sin insumos que limiten cuántas veces la hacés.</p>
 
           <button
             v-if="canWrite"
             type="button"
             class="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-success-500 hover:bg-success-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-xl transition-all duration-200"
-            :disabled="liveCost.maxBatches <= 0"
+            :disabled="liveCost.maxBatches !== null && liveCost.maxBatches <= 0"
             @click="openProduceModal"
           >
             🍳 Hacer Receta
@@ -359,6 +405,15 @@
             <span class="ml-3 text-sm font-medium text-warm-700">Receta activa</span>
           </label>
         </div>
+
+        <button
+          v-if="editingId && canWrite"
+          type="button"
+          class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-error-600 hover:bg-error-50 font-medium rounded-xl border border-error-200 transition-all duration-200"
+          @click="deleteRecipe"
+        >
+          🗑️ Borrar Receta
+        </button>
       </div>
     </SidePanel>
 
@@ -408,7 +463,10 @@
         <div v-if="produceError" class="rounded-xl bg-error-50 p-4 border border-error-100">
           <p class="text-sm text-error-700">{{ produceError }}</p>
         </div>
-        <p class="text-sm text-warm-600">Vas a descontar los insumos de <strong>{{ editingName }}</strong> y sumar stock al producto vinculado, si tiene.</p>
+        <p class="text-sm text-warm-600">
+          <template v-if="form.cost_mode === 'MANUAL'">Vas a sumar stock al producto vinculado a <strong>{{ editingName }}</strong>, si tiene (no hay insumos que descontar en modo manual).</template>
+          <template v-else>Vas a descontar los insumos de <strong>{{ editingName }}</strong> y sumar stock al producto vinculado, si tiene.</template>
+        </p>
 
         <div v-if="form.is_scalable" class="grid grid-cols-3 gap-2">
           <div>
@@ -434,7 +492,7 @@
             :max="liveCost?.maxBatches || undefined"
             class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400"
           >
-          <p v-if="liveCost" class="text-xs text-warm-500 mt-1">Stock alcanza para {{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'tanda' : 'tandas' }} a este tamaño</p>
+          <p v-if="liveCost && liveCost.maxBatches !== null" class="text-xs text-warm-500 mt-1">Stock alcanza para {{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'tanda' : 'tandas' }} a este tamaño</p>
         </div>
       </div>
     </Modal>
@@ -468,10 +526,11 @@ interface RecipeCard {
   portions: number
   is_active: boolean
   is_scalable: boolean
+  is_manual: boolean
   itemCount: number
   totalCost: number
   costPerPortion: number
-  maxBatches: number
+  maxBatches: number | null
   hasUnpricedItem: boolean
 }
 
@@ -579,6 +638,8 @@ const createEmptyForm = () => ({
   equipment_id: null as string | null,
   baking_time_minutes: null as number | null,
   is_active: true,
+  cost_mode: 'INSUMOS' as 'INSUMOS' | 'MANUAL',
+  manual_cost_clp: null as number | null,
   is_scalable: false,
   ref_diameter_cm: null as number | null,
   ref_height_cm: null as number | null,
@@ -587,6 +648,13 @@ const createEmptyForm = () => ({
   components: [] as Component[],
 })
 const form = ref(createEmptyForm())
+
+// Modo manual no es compatible con escalado por molde — cambiar a manual
+// resetea el escalado para no dejar una combinación inválida.
+const setCostMode = (mode: 'INSUMOS' | 'MANUAL') => {
+  form.value.cost_mode = mode
+  if (mode === 'MANUAL') form.value.is_scalable = false
+}
 
 const previewDiameter = ref<number | null>(null)
 const previewHeight = ref<number | null>(null)
@@ -619,6 +687,8 @@ const openEditPanel = async (r: RecipeCard) => {
         equipment_id: res.recipe.equipment_id,
         baking_time_minutes: res.recipe.baking_time_minutes,
         is_active: res.recipe.is_active,
+        cost_mode: res.recipe.cost_mode,
+        manual_cost_clp: res.recipe.manual_cost_clp,
         is_scalable: res.recipe.is_scalable,
         ref_diameter_cm: res.recipe.ref_diameter_cm,
         ref_height_cm: res.recipe.ref_height_cm,
@@ -806,7 +876,12 @@ const saveRecipe = async () => {
   if (!form.value.name.trim()) { panelError.value = 'El nombre es requerido'; return }
   if (!form.value.portions || form.value.portions <= 0) { panelError.value = 'Las porciones deben ser mayor a 0'; return }
 
-  if (form.value.is_scalable) {
+  if (form.value.cost_mode === 'MANUAL') {
+    if (!form.value.manual_cost_clp || form.value.manual_cost_clp <= 0) {
+      panelError.value = 'Ingresá el costo total'
+      return
+    }
+  } else if (form.value.is_scalable) {
     if (!form.value.ref_diameter_cm || !form.value.ref_height_cm || !form.value.ref_layers) {
       panelError.value = 'Completá diámetro, alto y capas de referencia'
       return
@@ -825,11 +900,16 @@ const saveRecipe = async () => {
       name: form.value.name.trim(),
       portions: form.value.portions,
       notes: form.value.notes || null,
-      equipment_id: useEquipment.value ? form.value.equipment_id : null,
-      baking_time_minutes: useEquipment.value ? form.value.baking_time_minutes : null,
-      is_scalable: form.value.is_scalable,
+      equipment_id: form.value.cost_mode === 'INSUMOS' && useEquipment.value ? form.value.equipment_id : null,
+      baking_time_minutes: form.value.cost_mode === 'INSUMOS' && useEquipment.value ? form.value.baking_time_minutes : null,
+      cost_mode: form.value.cost_mode,
+      is_scalable: form.value.cost_mode === 'INSUMOS' && form.value.is_scalable,
     }
-    if (form.value.is_scalable) {
+    if (form.value.cost_mode === 'MANUAL') {
+      payload.manual_cost_clp = form.value.manual_cost_clp
+      payload.items = []
+      payload.components = []
+    } else if (form.value.is_scalable) {
       payload.ref_diameter_cm = form.value.ref_diameter_cm
       payload.ref_height_cm = form.value.ref_height_cm
       payload.ref_layers = form.value.ref_layers
@@ -853,6 +933,22 @@ const saveRecipe = async () => {
     await loadRecipes()
   } catch (e: any) {
     panelError.value = e?.data?.error || 'Error al guardar la receta'
+  } finally {
+    saving.value = false
+  }
+}
+
+const deleteRecipe = async () => {
+  if (!editingId.value) return
+  if (!confirm(`¿Borrar la receta "${editingName.value}"? Esta acción no se puede deshacer.`)) return
+  panelError.value = ''
+  saving.value = true
+  try {
+    await api.delete(`/admin/recipes/${editingId.value}`)
+    showPanel.value = false
+    await loadRecipes()
+  } catch (e: any) {
+    panelError.value = e?.data?.error || 'Error al borrar la receta'
   } finally {
     saving.value = false
   }

@@ -1,6 +1,26 @@
 const { convertQuantity } = require("./units");
 
 /**
+ * Costo de una receta en modo manual: el usuario tipea el costo total, sin
+ * insumos. `maxBatches` queda en null (no aplica — no hay stock que limite).
+ */
+function computeManualCost(recipe) {
+  const totalCost = Number(recipe.manual_cost_clp) || 0;
+  const portions = Number(recipe.portions) || 1;
+  return {
+    itemCount: 0,
+    itemsCost: totalCost,
+    energyCost: 0,
+    totalCost,
+    costPerPortion: Math.round(totalCost / portions),
+    maxBatches: null,
+    hasUnpricedItem: false,
+    isScalable: false,
+    isManual: true,
+  };
+}
+
+/**
  * Calcula el costo de una receta a partir de sus líneas (insumo + cantidad + unidad)
  * y, opcionalmente, el consumo de energía del equipo usado.
  *
@@ -234,6 +254,7 @@ async function getSingleRecipeCost(db, recipeId, targetDims = {}) {
   );
   if (r.rowCount === 0) return null;
   const recipe = r.rows[0];
+  if (recipe.cost_mode === "MANUAL") return computeManualCost(recipe);
   const equipment = recipe.equipment_id ? { energy_type: recipe.energy_type, consumption_rate: recipe.consumption_rate } : null;
   const energyPrices = await getEnergyPrices(db);
 
@@ -284,7 +305,7 @@ async function getRecipeCostsByIds(db, recipeIds) {
   if (ids.length === 0) return map;
 
   const r = await db.query(
-    `SELECT r.id, r.portions, r.baking_time_minutes, r.equipment_id, r.is_scalable,
+    `SELECT r.id, r.portions, r.baking_time_minutes, r.equipment_id, r.is_scalable, r.cost_mode, r.manual_cost_clp,
             eq.energy_type, eq.consumption_rate
      FROM recipes r
      LEFT JOIN kitchen_equipment eq ON eq.id = r.equipment_id
@@ -292,13 +313,17 @@ async function getRecipeCostsByIds(db, recipeIds) {
     [ids]
   );
 
-  const flatIds = r.rows.filter((row) => !row.is_scalable).map((row) => row.id);
-  const scalableIds = r.rows.filter((row) => row.is_scalable).map((row) => row.id);
+  for (const row of r.rows) {
+    if (row.cost_mode === "MANUAL") map.set(row.id, computeManualCost(row));
+  }
+
+  const flatIds = r.rows.filter((row) => row.cost_mode !== "MANUAL" && !row.is_scalable).map((row) => row.id);
+  const scalableIds = r.rows.filter((row) => row.cost_mode !== "MANUAL" && row.is_scalable).map((row) => row.id);
 
   const [itemsMap, energyPrices] = await Promise.all([getItemsForRecipes(db, flatIds), getEnergyPrices(db)]);
 
   for (const row of r.rows) {
-    if (row.is_scalable) continue;
+    if (row.cost_mode === "MANUAL" || row.is_scalable) continue;
     const equipment = row.equipment_id ? { energy_type: row.energy_type, consumption_rate: row.consumption_rate } : null;
     map.set(row.id, { ...computeRecipeCost({ recipe: row, items: itemsMap.get(row.id) || [], equipment, ...energyPrices }), isScalable: false });
   }
@@ -313,6 +338,7 @@ async function getRecipeCostsByIds(db, recipeIds) {
 
 module.exports = {
   computeRecipeCost,
+  computeManualCost,
   getEnergyPrices,
   getItemsForRecipes,
   getRecipeCostsByIds,

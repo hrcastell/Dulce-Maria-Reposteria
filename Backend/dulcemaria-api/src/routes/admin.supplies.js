@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
-const { VALID_UNITS } = require("../lib/units");
+const { VALID_UNITS, convertQuantity } = require("../lib/units");
 
 const router = express.Router();
 
@@ -131,7 +131,7 @@ router.get("/expenses", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req,
     const itemsByExpense = new Map();
     if (expenseIds.length > 0) {
       const itemsRes = await pool.query(
-        `SELECT id, expense_record_id, supply_id, product_name_snapshot, quantity, unit_price_clp, total_clp
+        `SELECT id, expense_record_id, supply_id, product_name_snapshot, quantity, unit, unit_price_clp, total_clp
          FROM expense_record_items
          WHERE expense_record_id = ANY($1::uuid[])
          ORDER BY created_at ASC`,
@@ -157,6 +157,7 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
     supply_id: z.string().uuid(),
     product_name: z.string().min(1).max(200),
     quantity: z.number().positive(),
+    unit: z.enum(VALID_UNITS),
     unit_price_clp: z.number().int().nonnegative(),
     total_clp: z.number().int().nonnegative(),
   });
@@ -203,22 +204,52 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
 
     if (hasItems) {
       for (const item of items) {
+        const supplyRes = await client.query(
+          `SELECT unit, reference_qty FROM supplies WHERE id=$1 FOR UPDATE`,
+          [item.supply_id]
+        );
+        if (supplyRes.rowCount === 0) {
+          const err = new Error(`El insumo "${item.product_name}" ya no existe`);
+          err.statusCode = 400;
+          throw err;
+        }
+        const supply = supplyRes.rows[0];
+
+        // La compra puede venir en una unidad distinta a la del insumo (ej:
+        // comprás "10 kg" de algo cuyo stock se lleva en gramos) — se convierte
+        // antes de sumar, para no pisar stock de forma silenciosa como pasaba antes.
+        let stockIncrement;
+        let referencePriceClp;
+        try {
+          stockIncrement = convertQuantity(item.quantity, item.unit, supply.unit);
+          // Precio por la misma cantidad de referencia que ya tiene el insumo
+          // (ej: si reference_qty=1000g y compraste a $850/kg, el nuevo "precio
+          // por 1000g" sigue siendo 850, no se pisa por un cambio de unidad).
+          const refQtyInItemUnit = convertQuantity(Number(supply.reference_qty), supply.unit, item.unit);
+          referencePriceClp = Math.round(item.unit_price_clp * refQtyInItemUnit);
+        } catch (convErr) {
+          const err = new Error(`No se pudo registrar "${item.product_name}": ${convErr.message}`);
+          err.statusCode = 400;
+          throw err;
+        }
+
         await client.query(
-          `INSERT INTO expense_record_items (id, expense_record_id, supply_id, product_name_snapshot, quantity, unit_price_clp, total_clp)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [crypto.randomUUID(), id, item.supply_id, item.product_name, item.quantity, item.unit_price_clp, item.total_clp]
+          `INSERT INTO expense_record_items (id, expense_record_id, supply_id, product_name_snapshot, quantity, unit, unit_price_clp, total_clp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [crypto.randomUUID(), id, item.supply_id, item.product_name, item.quantity, item.unit, item.unit_price_clp, item.total_clp]
         );
         // Solo actualiza el "último precio" si esta boleta es igual o más reciente que
         // el último precio ya registrado, para que un gasto retroactivo no pise un precio más nuevo.
         await client.query(
           `UPDATE supplies SET last_price_clp=$1, last_updated=$3::timestamptz
            WHERE id=$2 AND (last_updated IS NULL OR last_updated <= $3::timestamptz)`,
-          [item.unit_price_clp, item.supply_id, expenseDate]
+          [referencePriceClp, item.supply_id, expenseDate]
         );
-        // La compra suma stock al insumo. Se revierte si el gasto se borra (ver DELETE).
+        // La compra suma stock al insumo (ya convertido a la unidad del insumo).
+        // Se revierte si el gasto se borra (ver DELETE).
         await client.query(
           `UPDATE supplies SET stock_qty = stock_qty + $1 WHERE id=$2`,
-          [item.quantity, item.supply_id]
+          [stockIncrement, item.supply_id]
         );
       }
     }
@@ -234,7 +265,8 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
     if (e?.code === "23503") {
       return res.status(400).json({ ok: false, error: "El insumo o proveedor seleccionado ya no existe" });
     }
-    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+    const statusCode = Number(e?.statusCode || 500);
+    res.status(statusCode).json({ ok: false, error: String(e?.message ?? e) });
   } finally {
     client.release();
   }
@@ -252,12 +284,28 @@ router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidP
     await client.query("BEGIN");
 
     // Revierte el stock que había sumado este gasto antes de borrarlo (ver POST /expenses).
+    // `unit` puede faltar en registros históricos de antes de guardar la unidad
+    // de compra — en ese caso se asume que ya estaba en la unidad del insumo
+    // (comportamiento anterior), igual que hacía el código viejo.
     const itemsRes = await client.query(
-      `SELECT supply_id, quantity FROM expense_record_items WHERE expense_record_id=$1`,
+      `SELECT ei.supply_id, ei.quantity, ei.unit, s.unit AS supply_unit
+       FROM expense_record_items ei
+       JOIN supplies s ON s.id = ei.supply_id
+       WHERE ei.expense_record_id=$1
+       FOR UPDATE OF s`,
       [req.params.id]
     );
     for (const item of itemsRes.rows) {
-      await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1 WHERE id=$2`, [item.quantity, item.supply_id]);
+      let revertAmount = Number(item.quantity);
+      if (item.unit) {
+        try {
+          revertAmount = convertQuantity(Number(item.quantity), item.unit, item.supply_unit);
+        } catch {
+          // Unidad incompatible con la actual del insumo (cambió después de la compra) —
+          // revertir en la unidad original igual es mejor que no revertir nada.
+        }
+      }
+      await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1 WHERE id=$2`, [revertAmount, item.supply_id]);
     }
 
     const r = await client.query("DELETE FROM expense_records WHERE id=$1 RETURNING id", [req.params.id]);
