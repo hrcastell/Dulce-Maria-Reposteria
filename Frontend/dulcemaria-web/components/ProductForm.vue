@@ -25,6 +25,46 @@
       ></textarea>
     </div>
 
+    <!-- Receta vinculada -->
+    <div class="pt-4 border-t border-warm-100">
+      <label class="flex items-center gap-3 cursor-pointer mb-3 select-none">
+        <div class="relative inline-flex items-center cursor-pointer">
+          <input v-model="linkRecipe" type="checkbox" class="sr-only peer" @change="onToggleLinkRecipe">
+          <div class="w-11 h-6 bg-warm-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+        </div>
+        <span class="text-sm font-medium text-warm-700">Vincular a una receta</span>
+      </label>
+
+      <div v-if="linkRecipe" class="animate-fadeIn space-y-2">
+        <div v-if="recipeId" class="flex items-center justify-between p-3 bg-primary-50 rounded-xl border border-primary-100">
+          <span class="text-sm font-medium text-warm-800">{{ recipeName }}</span>
+          <button type="button" class="text-xs text-warm-500 hover:text-error-600" @click="clearRecipeSelection">Quitar</button>
+        </div>
+        <div v-else class="relative">
+          <input
+            v-model="recipeSearch"
+            type="text"
+            class="block w-full px-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+            placeholder="Buscar receta por nombre..."
+            @input="onRecipeSearchInput"
+            @focus="showRecipeDropdown = true"
+          >
+          <div v-if="showRecipeDropdown && recipeResults.length > 0" class="absolute z-10 mt-1 w-full bg-white border border-warm-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+            <button
+              v-for="r in recipeResults"
+              :key="r.id"
+              type="button"
+              class="block w-full text-left px-4 py-2 hover:bg-warm-50 text-sm"
+              @click="selectRecipe(r)"
+            >
+              {{ r.name }} <span class="text-warm-400">— costo/porción ${{ formatPrice(r.costPerPortion) }}</span>
+            </button>
+          </div>
+        </div>
+        <p class="text-xs text-warm-500">El costo del producto se calcula solo desde el costo de la receta (por porción), en vez de cargarse a mano.</p>
+      </div>
+    </div>
+
     <div>
       <label class="block text-sm font-medium text-warm-700 mb-1">Precio Costo (CLP)</label>
       <div class="relative">
@@ -33,12 +73,18 @@
           v-model.number="costPrice"
           type="number"
           min="0"
-          class="block w-full pl-8 pr-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+          :disabled="linkRecipe && !!recipeId"
+          :class="[
+            'block w-full pl-8 pr-4 py-2.5 border border-warm-200 rounded-xl text-warm-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all',
+            linkRecipe && recipeId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+          ]"
           placeholder="8000"
           @input="onCostPriceInput"
         >
       </div>
-      <p class="text-xs text-warm-500 mt-1">Opcional — permite calcular el precio de venta desde el margen de ganancia</p>
+      <p class="text-xs text-warm-500 mt-1">
+        {{ linkRecipe && recipeId ? 'Calculado desde la receta vinculada' : 'Opcional — permite calcular el precio de venta desde el margen de ganancia' }}
+      </p>
     </div>
 
     <div>
@@ -230,6 +276,54 @@ const marginPct = ref<number | null>(
 const includeIva = ref(false)
 const ivaPct = ref(19)
 
+// Receta vinculada — si hay una, el costo se calcula solo desde ella (ver
+// admin.products.js GET, que sobreescribe cost_price_clp con el valor en vivo).
+const linkRecipe = ref(!!props.product?.recipe_id)
+const recipeId = ref<string | null>(props.product?.recipe_id ?? null)
+const recipeName = ref<string>(props.product?.recipe_name ?? '')
+const recipeSearch = ref('')
+const recipeResults = ref<any[]>([])
+const showRecipeDropdown = ref(false)
+let recipeSearchTimer: any = null
+let recipeSearchSeq = 0
+
+const searchRecipes = async () => {
+  const seq = ++recipeSearchSeq
+  try {
+    const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/recipes?q=${encodeURIComponent(recipeSearch.value.trim())}`)
+    if (seq !== recipeSearchSeq) return // llegó una respuesta vieja después de una búsqueda más nueva, se descarta
+    if (res.ok) recipeResults.value = res.items
+  } catch {
+    if (seq !== recipeSearchSeq) return
+    recipeResults.value = []
+  }
+}
+
+const onRecipeSearchInput = () => {
+  showRecipeDropdown.value = true
+  clearTimeout(recipeSearchTimer)
+  recipeSearchTimer = setTimeout(searchRecipes, 250)
+}
+
+const selectRecipe = (r: any) => {
+  recipeId.value = r.id
+  recipeName.value = r.name
+  recipeSearch.value = ''
+  recipeResults.value = []
+  showRecipeDropdown.value = false
+  costPrice.value = r.costPerPortion
+  onCostPriceInput()
+}
+
+const clearRecipeSelection = () => {
+  recipeId.value = null
+  recipeName.value = ''
+}
+
+const onToggleLinkRecipe = () => {
+  if (!linkRecipe.value) clearRecipeSelection()
+}
+
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n || 0))
 
 const priceWithIva = computed(() => {
@@ -321,7 +415,8 @@ const submit = () => {
       priceClp: form.value.price_clp,
       costPriceClp: costPrice.value,
       stockQty: form.value.stock_qty,
-      isActive: form.value.is_active
+      isActive: form.value.is_active,
+      recipeId: linkRecipe.value ? recipeId.value : null
     }
     emit('submit', data)
   }

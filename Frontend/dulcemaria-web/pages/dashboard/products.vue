@@ -256,6 +256,9 @@ interface Product {
   is_active: boolean
   thumb_url?: string
   images?: any[]
+  recipe_id?: string | null
+  recipe_name?: string | null
+  cost_from_recipe?: boolean
 }
 
 const products = ref<Product[]>([])
