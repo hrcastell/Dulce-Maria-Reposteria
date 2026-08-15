@@ -11,6 +11,7 @@ function computeManualCost(recipe) {
     itemCount: 0,
     itemsCost: totalCost,
     energyCost: 0,
+    laborCost: 0,
     totalCost,
     costPerPortion: Math.round(totalCost / portions),
     maxBatches: null,
@@ -66,18 +67,28 @@ function computeRecipeCost({ recipe, items, equipment, energyPriceKwh, energyPri
   let energyCost = 0;
   if (equipment && recipe.baking_time_minutes != null) {
     const hours = Number(recipe.baking_time_minutes) / 60;
-    const consumed = Number(equipment.consumption_rate) * hours;
+    const rate = Number(equipment.consumption_rate) || 0;
+    // Eléctrico: consumption_rate se carga en Watts (como dice la chapa del equipo),
+    // se convierte a kWh acá. Gas: consumption_rate ya está en kg/h, sin conversión.
+    const consumed = equipment.energy_type === "ELECTRIC" ? (rate / 1000) * hours : rate * hours;
     const price = equipment.energy_type === "ELECTRIC" ? Number(energyPriceKwh || 0) : Number(energyPriceGas || 0);
     energyCost = consumed * price;
   }
 
-  const totalCost = itemsCost + energyCost;
+  let laborCost = 0;
+  if (recipe.labor_minutes != null && recipe.labor_rate_clp_hour != null) {
+    const hours = Number(recipe.labor_minutes) / 60;
+    laborCost = hours * Number(recipe.labor_rate_clp_hour);
+  }
+
+  const totalCost = itemsCost + energyCost + laborCost;
   const portions = Number(recipe.portions) || 1;
 
   return {
     itemCount: items.length,
     itemsCost: Math.round(itemsCost),
     energyCost: Math.round(energyCost),
+    laborCost: Math.round(laborCost),
     totalCost: Math.round(totalCost),
     costPerPortion: Math.round(totalCost / portions),
     maxBatches,
@@ -298,6 +309,95 @@ async function getSingleRecipeCost(db, recipeId, targetDims = {}) {
   };
 }
 
+/** Resuelve líneas {supply_id, quantity, unit} (típicamente sin guardar aún, ej. desde un formulario) contra `supplies`, en el mismo shape que espera `computeRecipeCost`. Ignora supply_id que no existan. */
+async function resolveItemsBySupplyIds(db, rawItems) {
+  if (!rawItems || rawItems.length === 0) return [];
+  const supplyIds = [...new Set(rawItems.map((it) => it.supply_id))];
+  const r = await db.query(
+    `SELECT id, name, unit, last_price_clp, reference_qty, stock_qty FROM supplies WHERE id = ANY($1::uuid[])`,
+    [supplyIds]
+  );
+  const byId = new Map(r.rows.map((row) => [row.id, row]));
+  const items = [];
+  for (const it of rawItems) {
+    const supply = byId.get(it.supply_id);
+    if (!supply) continue;
+    items.push({
+      quantity: it.quantity,
+      unit: it.unit,
+      supply: {
+        id: supply.id,
+        name: supply.name,
+        unit: supply.unit,
+        last_price_clp: supply.last_price_clp,
+        reference_qty: supply.reference_qty,
+        stock_qty: supply.stock_qty,
+      },
+    });
+  }
+  return items;
+}
+
+/**
+ * Costea una receta a partir del estado ACTUAL de un formulario (insumos/componentes
+ * aún sin guardar) — usado por el panel de "Plantilla de Costo" para mostrar el costo
+ * en vivo mientras se edita, sin necesidad de persistir primero.
+ */
+async function previewRecipeCost(db, payload) {
+  const {
+    costMode, manualCostClp, portions,
+    items = [], components = [],
+    equipmentId, bakingTimeMinutes,
+    laborMinutes, laborRateClpHour,
+    isScalable,
+    refDiameterCm, refHeightCm, refLayers,
+    targetDiameterCm, targetHeightCm, targetLayers,
+  } = payload;
+
+  const recipe = {
+    portions,
+    baking_time_minutes: bakingTimeMinutes ?? null,
+    labor_minutes: laborMinutes ?? null,
+    labor_rate_clp_hour: laborRateClpHour ?? null,
+  };
+
+  if (costMode === "MANUAL") {
+    return computeManualCost({ ...recipe, manual_cost_clp: manualCostClp });
+  }
+
+  let equipment = null;
+  if (equipmentId) {
+    const eqRes = await db.query(`SELECT energy_type, consumption_rate FROM kitchen_equipment WHERE id = $1`, [equipmentId]);
+    if (eqRes.rowCount > 0) equipment = eqRes.rows[0];
+  }
+  const energyPrices = await getEnergyPrices(db);
+
+  if (!isScalable) {
+    const resolvedItems = await resolveItemsBySupplyIds(db, items);
+    return { ...computeRecipeCost({ recipe, items: resolvedItems, equipment, ...energyPrices }), isScalable: false };
+  }
+
+  const resolvedComponents = [];
+  for (const comp of components) {
+    resolvedComponents.push({
+      layer_scale_basis: comp.layer_scale_basis,
+      items: await resolveItemsBySupplyIds(db, comp.items || []),
+    });
+  }
+
+  const target = {
+    targetDiameterCm: targetDiameterCm ?? refDiameterCm,
+    targetHeightCm: targetHeightCm ?? refHeightCm,
+    targetLayers: targetLayers ?? refLayers,
+  };
+  const scaledItems = scaleComponents(resolvedComponents, { refDiameterCm, refHeightCm, refLayers, ...target });
+  const volumeRatio = computeVolumeRatio(refDiameterCm, refHeightCm, target.targetDiameterCm, target.targetHeightCm);
+  const scaledPortions = Math.max(1, Math.round((Number(portions) || 1) * volumeRatio));
+
+  const cost = computeRecipeCost({ recipe: { ...recipe, portions: scaledPortions }, items: scaledItems, equipment, ...energyPrices });
+  return { ...cost, isScalable: true, scaledPortions, appliedTarget: target };
+}
+
 /** Trae y calcula el costo de un set de recetas en una sola pasada (listados de recetas o productos). Escalables se costean a su tamaño de referencia. */
 async function getRecipeCostsByIds(db, recipeIds) {
   const ids = [...new Set(recipeIds)].filter(Boolean);
@@ -306,6 +406,7 @@ async function getRecipeCostsByIds(db, recipeIds) {
 
   const r = await db.query(
     `SELECT r.id, r.portions, r.baking_time_minutes, r.equipment_id, r.is_scalable, r.cost_mode, r.manual_cost_clp,
+            r.labor_minutes, r.labor_rate_clp_hour,
             eq.energy_type, eq.consumption_rate
      FROM recipes r
      LEFT JOIN kitchen_equipment eq ON eq.id = r.equipment_id
@@ -348,4 +449,6 @@ module.exports = {
   scaleComponents,
   getComponentsForRecipe,
   getSingleRecipeCost,
+  resolveItemsBySupplyIds,
+  previewRecipeCost,
 };

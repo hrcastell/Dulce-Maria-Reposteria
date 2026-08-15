@@ -10,6 +10,7 @@ const {
   getComponentsForRecipe,
   scaleComponents,
   computeVolumeRatio,
+  previewRecipeCost,
 } = require("../lib/recipeCost");
 const { convertQuantity, VALID_UNITS } = require("../lib/units");
 
@@ -19,6 +20,41 @@ const flatItemSchema = z.object({
   supply_id: z.string().uuid(),
   quantity: z.number().positive(),
   unit: z.enum(VALID_UNITS),
+});
+
+// Body de POST /admin/recipes/preview-cost — mismas líneas que flatItemSchema/componentSchema
+// pero sin las validaciones estrictas de "receta completa": es solo para calcular, no persiste nada.
+const previewItemSchema = z.object({
+  supply_id: z.string().uuid(),
+  quantity: z.number(),
+  unit: z.string(),
+});
+const previewCostSchema = z.object({
+  costMode: z.enum(["INSUMOS", "MANUAL"]).default("INSUMOS"),
+  manualCostClp: z.number().nonnegative().optional().nullable(),
+  portions: z.number().positive().default(1),
+  items: z.array(previewItemSchema).max(100).optional().default([]),
+  components: z
+    .array(
+      z.object({
+        layer_scale_basis: z.enum(["CAKE", "FILLING", "NONE"]).optional(),
+        items: z.array(previewItemSchema).max(100).optional().default([]),
+      })
+    )
+    .max(20)
+    .optional()
+    .default([]),
+  equipmentId: z.string().uuid().optional().nullable(),
+  bakingTimeMinutes: z.number().nonnegative().optional().nullable(),
+  laborMinutes: z.number().nonnegative().optional().nullable(),
+  laborRateClpHour: z.number().nonnegative().optional().nullable(),
+  isScalable: z.boolean().optional().default(false),
+  refDiameterCm: z.number().positive().optional().nullable(),
+  refHeightCm: z.number().positive().optional().nullable(),
+  refLayers: z.number().int().positive().optional().nullable(),
+  targetDiameterCm: z.number().positive().optional().nullable(),
+  targetHeightCm: z.number().positive().optional().nullable(),
+  targetLayers: z.number().int().positive().optional().nullable(),
 });
 
 const componentSchema = z.object({
@@ -34,6 +70,8 @@ const recipeSchema = z
     notes: z.string().max(1000).optional().nullable(),
     equipment_id: z.string().uuid().optional().nullable(),
     baking_time_minutes: z.number().nonnegative().optional().nullable(),
+    labor_minutes: z.number().nonnegative().optional().nullable(),
+    labor_rate_clp_hour: z.number().int().nonnegative().optional().nullable(),
     cost_mode: z.enum(["INSUMOS", "MANUAL"]).default("INSUMOS"),
     manual_cost_clp: z.number().int().nonnegative().optional().nullable(), // usado cuando cost_mode=MANUAL
     is_scalable: z.boolean().default(false),
@@ -119,6 +157,21 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
   }
 });
 
+// POST /admin/recipes/preview-cost — costo en vivo a partir del estado actual de un
+// formulario (insumos/componentes/energía/mano de obra aún sin guardar), sin persistir.
+// STAFF puede llamarlo (no muta nada) para que el panel de solo-lectura también lo use.
+router.post("/preview-cost", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  const parsed = previewCostSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  try {
+    const pool = getPool();
+    const cost = await previewRecipeCost(pool, parsed.data);
+    res.json({ ok: true, cost });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
 // GET /admin/recipes/:id — detalle para el formulario. Con ?target_diameter_cm=&target_height_cm=&target_layers=
 // costea una receta escalable a ese tamaño en vez de al de referencia.
 router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
@@ -187,7 +240,9 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
         notes: row.notes,
         equipment_id: row.equipment_id,
         equipment_name: row.equipment_name,
-        baking_time_minutes: row.baking_time_minutes,
+        baking_time_minutes: row.baking_time_minutes != null ? Number(row.baking_time_minutes) : null,
+        labor_minutes: row.labor_minutes,
+        labor_rate_clp_hour: row.labor_rate_clp_hour,
         is_active: row.is_active,
         cost_mode: row.cost_mode,
         manual_cost_clp: row.manual_cost_clp,
@@ -223,8 +278,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     await client.query("BEGIN");
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, cost_mode, manual_cost_clp, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, cost_mode, manual_cost_clp, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers, labor_minutes, labor_rate_clp_hour)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         id, d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
         d.cost_mode,
@@ -233,6 +288,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
         d.is_scalable ? d.ref_diameter_cm : null,
         d.is_scalable ? d.ref_height_cm : null,
         d.is_scalable ? d.ref_layers : null,
+        d.labor_minutes ?? null,
+        d.labor_rate_clp_hour ?? null,
       ]
     );
     await persistRecipeItems(client, id, d);
@@ -270,8 +327,9 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
     await client.query("BEGIN");
     const r = await client.query(
       `UPDATE recipes SET name=$1, portions=$2, notes=$3, equipment_id=$4, baking_time_minutes=$5,
-         cost_mode=$6, manual_cost_clp=$7, is_scalable=$8, ref_diameter_cm=$9, ref_height_cm=$10, ref_layers=$11, updated_at=NOW()
-       WHERE id=$12 RETURNING id`,
+         cost_mode=$6, manual_cost_clp=$7, is_scalable=$8, ref_diameter_cm=$9, ref_height_cm=$10, ref_layers=$11,
+         labor_minutes=$12, labor_rate_clp_hour=$13, updated_at=NOW()
+       WHERE id=$14 RETURNING id`,
       [
         d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
         d.cost_mode,
@@ -280,6 +338,8 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
         d.is_scalable ? d.ref_diameter_cm : null,
         d.is_scalable ? d.ref_height_cm : null,
         d.is_scalable ? d.ref_layers : null,
+        d.labor_minutes ?? null,
+        d.labor_rate_clp_hour ?? null,
         id,
       ]
     );

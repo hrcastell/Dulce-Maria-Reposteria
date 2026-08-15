@@ -369,6 +369,8 @@ async function runCompleteMigrations() {
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_diameter_cm NUMERIC(8,2);`,
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_height_cm NUMERIC(8,2);`,
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_layers INT;`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_minutes INT CHECK (labor_minutes IS NULL OR labor_minutes >= 0);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_rate_clp_hour INT CHECK (labor_rate_clp_hour IS NULL OR labor_rate_clp_hour >= 0);`,
 
     // ============================================
     // Tabla: recipe_components (Mezcla, Almíbar, Relleno, Cobertura...) —
