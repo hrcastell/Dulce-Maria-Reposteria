@@ -103,6 +103,14 @@
             <span class="text-warm-500">Costo / porción</span>
             <span class="font-medium text-warm-700">${{ formatPrice(r.costPerPortion) }}</span>
           </div>
+          <div v-if="calcSuggestedPrice(r.costPerPortion, r.margin_pct) !== null" class="flex items-center justify-between">
+            <span class="text-warm-500">Precio sugerido</span>
+            <span class="font-medium text-warm-700">${{ formatPrice(calcSuggestedPrice(r.costPerPortion, r.margin_pct)) }}</span>
+          </div>
+          <div v-if="calcProfit(r.costPerPortion, r.margin_pct) !== null" class="flex items-center justify-between">
+            <span class="text-warm-500">Ganancia/porción</span>
+            <span class="font-semibold text-success-700">${{ formatPrice(calcProfit(r.costPerPortion, r.margin_pct)) }}</span>
+          </div>
         </div>
         <div v-if="r.maxBatches !== null" class="mt-4 pt-3 border-t border-warm-100 flex items-center justify-between">
           <span class="text-xs text-warm-500">Alcanza para</span>
@@ -513,6 +521,23 @@
             </div>
           </div>
         </div>
+
+        <!-- Margen de ganancia -->
+        <div class="pt-4 border-t border-warm-100">
+          <label class="block text-sm font-medium text-warm-700 mb-1">Margen de ganancia (%)</label>
+          <div class="relative w-32">
+            <input
+              v-model.number="marginPct"
+              type="number"
+              min="0"
+              max="99.9"
+              step="any"
+              class="input-sm pr-7"
+              placeholder="40"
+            >
+            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-warm-400 text-xs">%</span>
+          </div>
+        </div>
         </template>
 
         <!-- Costo en vivo -->
@@ -542,28 +567,6 @@
             <span class="text-warm-500">Costo de mano de obra</span>
             <span class="font-medium text-warm-700">${{ formatPrice(liveCost.laborCost) }}</span>
           </div>
-          <div v-if="liveCost.maxBatches !== null" class="flex items-center justify-between text-sm px-1">
-            <span class="text-warm-500">Alcanza para</span>
-            <span class="font-medium text-warm-700">{{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'vez' : 'veces' }}</span>
-          </div>
-          <p v-else class="text-xs text-warm-500 px-1">Modo manual — sin insumos que limiten cuántas veces la hacés.</p>
-
-          <!-- Calculadora de margen (solo informativa — no se persiste, igual que en ProductForm) -->
-          <div class="pt-3 border-t border-dashed border-warm-200">
-            <label class="block text-xs font-medium text-warm-600 mb-1">Margen de ganancia (%)</label>
-            <div class="relative w-32">
-              <input
-                v-model.number="marginPct"
-                type="number"
-                min="0"
-                max="99.9"
-                step="any"
-                class="input-sm pr-7"
-                placeholder="40"
-              >
-              <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-warm-400 text-xs">%</span>
-            </div>
-          </div>
 
           <template v-if="referencePricePerPortion !== null">
             <div class="flex items-center justify-between text-sm px-1">
@@ -579,6 +582,12 @@
               <span class="font-semibold text-success-700">${{ formatPrice(profitTotal) }}</span>
             </div>
           </template>
+
+          <div v-if="liveCost.maxBatches !== null" class="flex items-center justify-between text-sm px-1">
+            <span class="text-warm-500">Alcanza para</span>
+            <span class="font-medium text-warm-700">{{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'vez' : 'veces' }}</span>
+          </div>
+          <p v-else class="text-xs text-warm-500 px-1">Modo manual — sin insumos que limiten cuántas veces la hacés.</p>
 
           <button
             v-if="editingId && canWrite"
@@ -719,6 +728,22 @@
             <span class="text-warm-500">Costo de mano de obra</span>
             <span class="font-medium text-warm-700">${{ formatPrice(liveCost.laborCost) }}</span>
           </div>
+
+          <template v-if="referencePricePerPortion !== null">
+            <div class="flex items-center justify-between text-sm px-1">
+              <span class="text-warm-500">Precio de venta sugerido{{ liveCost.scaledPortions ? ' (por porción)' : '' }}</span>
+              <span class="font-medium text-warm-700">${{ formatPrice(referencePricePerPortion) }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm px-1">
+              <span class="text-warm-500">Ganancia por porción</span>
+              <span class="font-semibold text-success-700">${{ formatPrice(profitPerPortion) }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm px-1">
+              <span class="text-warm-500">Ganancia receta completa</span>
+              <span class="font-semibold text-success-700">${{ formatPrice(profitTotal) }}</span>
+            </div>
+          </template>
+
           <div v-if="liveCost.maxBatches !== null" class="flex items-center justify-between text-sm px-1">
             <span class="text-warm-500">Alcanza para</span>
             <span class="font-medium text-warm-700">{{ liveCost.maxBatches }} {{ liveCost.maxBatches === 1 ? 'vez' : 'veces' }}</span>
@@ -811,6 +836,7 @@ interface RecipeCard {
   costPerPortion: number
   maxBatches: number | null
   hasUnpricedItem: boolean
+  margin_pct: number | null
 }
 
 // El backend ya bloquea estas acciones para STAFF con 403; esto solo oculta
@@ -973,22 +999,25 @@ const saving = ref(false)
 const panelError = ref('')
 const liveCost = ref<any>(null)
 
-// Calculadora de margen (igual fórmula que ProductForm.vue) — puramente informativa,
-// no se persiste en la receta.
+// Margen de ganancia (igual fórmula que ProductForm.vue) — se persiste en la receta
+// (margin_pct). % del precio de venta que es ganancia (no % sobre el costo):
+// precio = costo / (1 - margen/100).
 const marginPct = ref<number | null>(null)
 
-// Margen = % del precio de venta que es ganancia (no % sobre el costo):
-// precio = costo / (1 - margen/100)
-const referencePricePerPortion = computed(() => {
-  const cost = liveCost.value?.costPerPortion
-  if (!cost || marginPct.value === null || marginPct.value >= 100 || marginPct.value < 0) return null
-  return Math.round(cost / (1 - marginPct.value / 100))
-})
+// Fuente de verdad única para precio sugerido / ganancia — la usan tanto el panel/modal
+// (contra liveCost + marginPct en edición) como las cards del grid (contra r.costPerPortion
+// + r.margin_pct ya persistidos).
+const calcSuggestedPrice = (costPerPortion: number | null | undefined, marginPct: number | null | undefined) => {
+  if (!costPerPortion || marginPct == null || marginPct >= 100 || marginPct < 0) return null
+  return Math.round(costPerPortion / (1 - marginPct / 100))
+}
+const calcProfit = (costPerPortion: number | null | undefined, marginPct: number | null | undefined) => {
+  const price = calcSuggestedPrice(costPerPortion, marginPct)
+  return price === null || costPerPortion == null ? null : price - costPerPortion
+}
 
-const profitPerPortion = computed(() => {
-  if (referencePricePerPortion.value === null) return null
-  return referencePricePerPortion.value - liveCost.value.costPerPortion
-})
+const referencePricePerPortion = computed(() => calcSuggestedPrice(liveCost.value?.costPerPortion, marginPct.value))
+const profitPerPortion = computed(() => calcProfit(liveCost.value?.costPerPortion, marginPct.value))
 
 const profitTotal = computed(() => {
   if (profitPerPortion.value === null) return null
@@ -1062,7 +1091,6 @@ const loadRecipeDetail = async (r: RecipeCard) => {
   editingId.value = r.id
   editingName.value = r.name
   panelError.value = ''
-  marginPct.value = null
   try {
     const res = await api.get<{ ok: boolean; recipe: any; items: any[] | null; components: any[] | null; cost: any }>(`/admin/recipes/${r.id}`)
     if (res.ok) {
@@ -1103,6 +1131,7 @@ const loadRecipeDetail = async (r: RecipeCard) => {
       }
       useEquipment.value = !!res.recipe.equipment_id
       useLabor.value = res.recipe.labor_minutes != null
+      marginPct.value = res.recipe.margin_pct
       liveCost.value = res.cost
       previewDiameter.value = res.recipe.ref_diameter_cm
       previewHeight.value = res.recipe.ref_height_cm
@@ -1355,6 +1384,7 @@ const saveRecipe = async () => {
       labor_rate_clp_hour: form.value.cost_mode === 'INSUMOS' && useLabor.value ? form.value.labor_rate_clp_hour : null,
       cost_mode: form.value.cost_mode,
       is_scalable: form.value.cost_mode === 'INSUMOS' && form.value.is_scalable,
+      margin_pct: form.value.cost_mode === 'INSUMOS' ? marginPct.value : null,
     }
     if (form.value.cost_mode === 'MANUAL') {
       payload.manual_cost_clp = form.value.manual_cost_clp
@@ -1382,8 +1412,13 @@ const saveRecipe = async () => {
     }
     showPanel.value = false
     await loadRecipes()
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Receta guardada correctamente.'
+    showNotice.value = true
   } catch (e: any) {
-    panelError.value = e?.data?.error || 'Error al guardar la receta'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al guardar la receta'
+    showNotice.value = true
   } finally {
     saving.value = false
   }

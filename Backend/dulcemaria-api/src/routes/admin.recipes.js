@@ -72,6 +72,7 @@ const recipeSchema = z
     baking_time_minutes: z.number().nonnegative().optional().nullable(),
     labor_minutes: z.number().nonnegative().optional().nullable(),
     labor_rate_clp_hour: z.number().int().nonnegative().optional().nullable(),
+    margin_pct: z.number().min(0).max(99.99).optional().nullable(),
     cost_mode: z.enum(["INSUMOS", "MANUAL"]).default("INSUMOS"),
     manual_cost_clp: z.number().int().nonnegative().optional().nullable(), // usado cuando cost_mode=MANUAL
     is_scalable: z.boolean().default(false),
@@ -125,7 +126,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
   try {
     const pool = getPool();
     const r = await pool.query(
-      `SELECT r.id, r.name, r.portions, r.is_active, r.is_scalable, r.cost_mode
+      `SELECT r.id, r.name, r.portions, r.is_active, r.is_scalable, r.cost_mode, r.margin_pct
        FROM recipes r
        ${search ? "WHERE r.name ILIKE $1" : "WHERE r.is_active = true"}
        ORDER BY r.name ASC`,
@@ -148,6 +149,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
         costPerPortion: cost.costPerPortion,
         maxBatches: cost.maxBatches,
         hasUnpricedItem: cost.hasUnpricedItem,
+        margin_pct: row.margin_pct != null ? Number(row.margin_pct) : null,
       };
     });
 
@@ -243,6 +245,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
         baking_time_minutes: row.baking_time_minutes != null ? Number(row.baking_time_minutes) : null,
         labor_minutes: row.labor_minutes,
         labor_rate_clp_hour: row.labor_rate_clp_hour,
+        margin_pct: row.margin_pct != null ? Number(row.margin_pct) : null,
         is_active: row.is_active,
         cost_mode: row.cost_mode,
         manual_cost_clp: row.manual_cost_clp,
@@ -278,8 +281,8 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     await client.query("BEGIN");
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, cost_mode, manual_cost_clp, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers, labor_minutes, labor_rate_clp_hour)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      `INSERT INTO recipes (id, name, portions, notes, equipment_id, baking_time_minutes, cost_mode, manual_cost_clp, is_scalable, ref_diameter_cm, ref_height_cm, ref_layers, labor_minutes, labor_rate_clp_hour, margin_pct)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         id, d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
         d.cost_mode,
@@ -290,6 +293,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
         d.is_scalable ? d.ref_layers : null,
         d.labor_minutes ?? null,
         d.labor_rate_clp_hour ?? null,
+        d.margin_pct ?? null,
       ]
     );
     await persistRecipeItems(client, id, d);
@@ -328,8 +332,8 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
     const r = await client.query(
       `UPDATE recipes SET name=$1, portions=$2, notes=$3, equipment_id=$4, baking_time_minutes=$5,
          cost_mode=$6, manual_cost_clp=$7, is_scalable=$8, ref_diameter_cm=$9, ref_height_cm=$10, ref_layers=$11,
-         labor_minutes=$12, labor_rate_clp_hour=$13, updated_at=NOW()
-       WHERE id=$14 RETURNING id`,
+         labor_minutes=$12, labor_rate_clp_hour=$13, margin_pct=$14, updated_at=NOW()
+       WHERE id=$15 RETURNING id`,
       [
         d.name, d.portions, d.notes ?? null, d.equipment_id ?? null, d.baking_time_minutes ?? null,
         d.cost_mode,
@@ -340,6 +344,7 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
         d.is_scalable ? d.ref_layers : null,
         d.labor_minutes ?? null,
         d.labor_rate_clp_hour ?? null,
+        d.margin_pct ?? null,
         id,
       ]
     );

@@ -371,6 +371,7 @@ async function runCompleteMigrations() {
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_layers INT;`,
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_minutes INT CHECK (labor_minutes IS NULL OR labor_minutes >= 0);`,
     `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_rate_clp_hour INT CHECK (labor_rate_clp_hour IS NULL OR labor_rate_clp_hour >= 0);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS margin_pct NUMERIC(5,2) CHECK (margin_pct IS NULL OR (margin_pct >= 0 AND margin_pct < 100));`,
 
     // ============================================
     // Tabla: recipe_components (Mezcla, Almíbar, Relleno, Cobertura...) —
