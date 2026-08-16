@@ -214,7 +214,7 @@
     </div>
 
     <!-- Modals -->
-    <Modal
+    <SidePanel
       v-model="showNewCustomerModal"
       title="Nuevo Cliente"
       :hide-submit="true"
@@ -225,7 +225,7 @@
         @submit="handleCreateCustomer"
       />
       <div class="mt-4 flex justify-end">
-        <button 
+        <button
           class="bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-xl font-medium transition-colors"
           :disabled="creatingCustomer"
           @click="customerFormRef?.submit()"
@@ -233,7 +233,7 @@
           {{ creatingCustomer ? 'Guardando...' : 'Guardar Cliente' }}
         </button>
       </div>
-    </Modal>
+    </SidePanel>
 
     <Modal
       v-model="showItemModal"
@@ -309,6 +309,14 @@
         </div>
       </div>
     </Modal>
+
+    <!-- NoticeDialog local a este componente — feedback del flujo "+ Nuevo"
+         cliente, no accede al NoticeDialog de orders.vue -->
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -321,6 +329,17 @@ const api = useApi()
 const emit = defineEmits<{
   submit: [data: any]
 }>()
+
+// Modo edición: el padre (orders.vue) ya hizo el fetch de GET /admin/orders/:id
+// (cabecera + items) antes de abrir el panel — este componente no hace su
+// propio fetch de detalle, solo hidrata `form` a partir de estas props.
+const props = withDefaults(defineProps<{
+  order?: any | null
+  orderItems?: any[]
+}>(), {
+  order: null,
+  orderItems: () => []
+})
 
 interface Product {
   id: string
@@ -368,7 +387,20 @@ const createEmptyItem = (): OrderItem => ({
   productId: '', variantId: '', toppings: [], qty: 1, _basePrice: 0, _productSearch: '', _showProductDropdown: false
 })
 
-const todayStr = new Date().toISOString().split('T')[0]
+// OJO: NO usar toISOString() acá — siempre convierte a UTC, así que después
+// de cierta hora local (ej. ~21:00 en Chile, UTC-3) ya cae en el día
+// siguiente en UTC y el default salta de fecha antes de tiempo. Se arma la
+// fecha con los componentes locales del Date (hora del dispositivo). Mismo
+// helper se reutiliza para precargar `orderDate` en modo edición desde
+// `order.created_at` — nunca toISOString() ahí tampoco.
+const toLocalDateStr = (d: Date) => {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const todayStr = toLocalDateStr(new Date())
 
 const form = ref({
   customerId: '',
@@ -392,6 +424,11 @@ const enableOverride = ref(false)
 const showNewCustomerModal = ref(false)
 const creatingCustomer = ref(false)
 const customerFormRef = ref<any>(null)
+
+// NoticeDialog local — feedback de éxito/error del flujo "+ Nuevo" cliente.
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const showItemModal = ref(false)
 const editingItemIndex = ref<number | null>(null)
@@ -445,31 +482,41 @@ const updateDeliveryFee = () => {
   }
 }
 
+// Fetch de variantes/toppings/basePrice para un item que ya tiene productId
+// seteado. Compartido por onProductChange (selección nueva desde el modal,
+// que resetea variantId/toppings antes de llamar) y por la hidratación de
+// items al abrir el form en modo edición (mantiene el variantId/toppings que
+// ya traía la orden, solo completa los catálogos _variants/_toppings).
+const fetchItemProductDetails = async (item: OrderItem) => {
+  if (!item.productId) return
+
+  const prod = products.value.find(p => p.id === item.productId)
+  if (prod) item._basePrice = prod.price_clp
+
+  try {
+    const [resVar, resTop] = await Promise.all([
+      api.get<{ ok: boolean; items: Variant[] }>(`/admin/products/${item.productId}/variants`),
+      api.get<{ ok: boolean; items: Topping[] }>(`/admin/products/${item.productId}/toppings`)
+    ])
+
+    if (resVar.ok) item._variants = resVar.items || []
+    if (resTop.ok) item._toppings = resTop.items || []
+
+  } catch (e) {
+    console.error('Error fetching details for product', item.productId, e)
+  }
+}
+
 const onProductChange = async (item: OrderItem) => {
   item.variantId = ''
   item.toppings = []
   item._variants = []
   item._toppings = []
   item._basePrice = 0
-  
+
   if (!item.productId) return
 
-  const prod = products.value.find(p => p.id === item.productId)
-  if (prod) item._basePrice = prod.price_clp
-
-  // Fetch details
-  try {
-    const [resVar, resTop] = await Promise.all([
-      api.get<{ ok: boolean; items: Variant[] }>(`/admin/products/${item.productId}/variants`),
-      api.get<{ ok: boolean; items: Topping[] }>(`/admin/products/${item.productId}/toppings`)
-    ])
-    
-    if (resVar.ok) item._variants = resVar.items || []
-    if (resTop.ok) item._toppings = resTop.items || []
-    
-  } catch (e) {
-    console.error('Error fetching details for product', item.productId, e)
-  }
+  await fetchItemProductDetails(item)
 }
 
 const filteredProductsFor = (item: OrderItem) => {
@@ -586,9 +633,14 @@ const handleCreateCustomer = async (data: any) => {
       customers.value.sort((a, b) => a.full_name.localeCompare(b.full_name))
       form.value.customerId = res.customer.id
       showNewCustomerModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Cliente creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al crear cliente')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear cliente'
+    showNotice.value = true
   } finally {
     creatingCustomer.value = false
   }
@@ -694,16 +746,54 @@ const clearCustomerSelection = () => {
   customerSearch.value = ''
 }
 
+// Modo edición: puebla `form` con la cabecera (`props.order`) y los items
+// (`props.orderItems`) que el padre ya trajo con GET /admin/orders/:id.
+// Requiere que `products` ya esté cargado (ver onMounted) para resolver
+// `_basePrice` de cada línea vía fetchItemProductDetails.
+const populateFormFromOrder = async () => {
+  const order = props.order
+  if (!order) return
+
+  form.value.customerId = order.customer_id
+  form.value.orderDate = toLocalDateStr(new Date(order.created_at))
+  form.value.paymentMethod = order.payment_method
+  form.value.paymentStatus = order.payment_status
+  form.value.deliveryMethod = order.delivery_method
+  form.value.deliveryFeeClp = order.delivery_fee_clp
+  form.value.discountAmountClp = order.discount_amount_clp
+
+  if (order.final_price_override_clp !== null && order.final_price_override_clp !== undefined) {
+    enableOverride.value = true
+    form.value.finalPriceOverrideClp = order.final_price_override_clp
+  }
+
+  const items: OrderItem[] = (props.orderItems || []).map((oi: any) => ({
+    productId: oi.product_id,
+    variantId: oi.variant_id || '',
+    qty: oi.qty,
+    toppings: JSON.parse(oi.selected_toppings || '[]').map((t: any) => t.id),
+    _basePrice: 0,
+    _productSearch: '',
+    _showProductDropdown: false
+  }))
+  form.value.items = items
+
+  await Promise.all(items.map(fetchItemProductDetails))
+}
+
 // Close dropdown when clicking outside
-onMounted(() => {
-  loadCustomers()
-  loadProducts()
-  
+onMounted(async () => {
   document.addEventListener('click', (e) => {
     if (customerDropdownRef.value && !customerDropdownRef.value.contains(e.target as Node)) {
       showCustomerDropdown.value = false
     }
   })
+
+  await Promise.all([loadCustomers(), loadProducts()])
+
+  if (props.order) {
+    await populateFormFromOrder()
+  }
 })
 
 defineExpose({ submit })

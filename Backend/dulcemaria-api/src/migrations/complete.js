@@ -256,6 +256,13 @@ async function runCompleteMigrations() {
     `CREATE TRIGGER trg_supplies_updated_at
       BEFORE UPDATE ON supplies
       FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+    // supplies.stock_qty — stock disponible del insumo, se ajusta a mano y se
+    // suma automáticamente al registrar un gasto con detalle (ver expense_record_items).
+    `ALTER TABLE supplies ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12,3) NOT NULL DEFAULT 0;`,
+    // supplies.reference_qty — a cuánto de `unit` corresponde last_price_clp
+    // (ej: 1 para el litro de leche, 30 para la bandeja de huevos), usado para
+    // calcular el costo de una receta al convertir unidades.
+    `ALTER TABLE supplies ADD COLUMN IF NOT EXISTS reference_qty NUMERIC(12,3) NOT NULL DEFAULT 1;`,
 
     // ============================================
     // Tabla: providers (proveedores)
@@ -310,6 +317,132 @@ async function runCompleteMigrations() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_expense ON expense_record_items(expense_record_id);`,
     `CREATE INDEX IF NOT EXISTS idx_expense_record_items_supply ON expense_record_items(supply_id);`,
+    // unit — en qué unidad se compró esta línea (puede diferir de la unidad
+    // base del insumo, ej: comprás "10 kg" de algo cuyo stock se lleva en
+    // gramos). Se convierte con convertQuantity antes de sumar/revertir stock.
+    // Nullable: registros históricos de antes de este campo no lo tienen.
+    `ALTER TABLE expense_record_items ADD COLUMN IF NOT EXISTS unit VARCHAR(20);`,
+
+    // ============================================
+    // Tabla: kitchen_equipment (hornos, etc. — consumo de gas/electricidad)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS kitchen_equipment (
+      id UUID PRIMARY KEY,
+      name VARCHAR(150) NOT NULL,
+      energy_type VARCHAR(20) NOT NULL CHECK (energy_type IN ('ELECTRIC','GAS')),
+      consumption_rate NUMERIC(12,4) NOT NULL CHECK (consumption_rate >= 0),
+      consumption_unit VARCHAR(30) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_kitchen_equipment_active ON kitchen_equipment(is_active);`,
+
+    // ============================================
+    // Tabla: recipes (recetas)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipes (
+      id UUID PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      portions INT NOT NULL DEFAULT 1 CHECK (portions > 0),
+      notes TEXT,
+      equipment_id UUID REFERENCES kitchen_equipment(id) ON DELETE SET NULL,
+      baking_time_minutes NUMERIC(8,2) CHECK (baking_time_minutes IS NULL OR baking_time_minutes >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipes_name ON recipes(name);`,
+    `CREATE INDEX IF NOT EXISTS idx_recipes_active ON recipes(is_active);`,
+    `DROP TRIGGER IF EXISTS trg_recipes_updated_at ON recipes;`,
+    `CREATE TRIGGER trg_recipes_updated_at
+      BEFORE UPDATE ON recipes
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // Modo de costeo manual — para costear sin cargar insumos (el usuario
+    // tipea el costo total directamente).
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS cost_mode VARCHAR(10) NOT NULL DEFAULT 'INSUMOS' CHECK (cost_mode IN ('INSUMOS','MANUAL'));`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS manual_cost_clp INT CHECK (manual_cost_clp IS NULL OR manual_cost_clp >= 0);`,
+
+    // Escalado por molde (torta por capas) — receta "patrón" calibrada para un
+    // molde/capas de referencia, que luego se recalcula para otro tamaño.
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS is_scalable BOOLEAN NOT NULL DEFAULT false;`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_diameter_cm NUMERIC(8,2);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_height_cm NUMERIC(8,2);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ref_layers INT;`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_minutes INT CHECK (labor_minutes IS NULL OR labor_minutes >= 0);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS labor_rate_clp_hour INT CHECK (labor_rate_clp_hour IS NULL OR labor_rate_clp_hour >= 0);`,
+    `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS margin_pct NUMERIC(5,2) CHECK (margin_pct IS NULL OR (margin_pct >= 0 AND margin_pct < 100));`,
+
+    // ============================================
+    // Tabla: recipe_components (Mezcla, Almíbar, Relleno, Cobertura...) —
+    // solo se usan cuando recipes.is_scalable = true.
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipe_components (
+      id UUID PRIMARY KEY,
+      recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      name VARCHAR(150) NOT NULL,
+      layer_scale_basis VARCHAR(10) NOT NULL DEFAULT 'NONE' CHECK (layer_scale_basis IN ('CAKE','FILLING','NONE')),
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_components_recipe ON recipe_components(recipe_id);`,
+
+    // ============================================
+    // Tabla: recipe_items (insumos que componen cada receta)
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS recipe_items (
+      id UUID PRIMARY KEY,
+      recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      supply_id UUID NOT NULL REFERENCES supplies(id) ON DELETE RESTRICT,
+      quantity NUMERIC(12,3) NOT NULL CHECK (quantity > 0),
+      unit VARCHAR(20) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_supply ON recipe_items(supply_id);`,
+    // component_id — a qué componente pertenece esta línea cuando la receta es
+    // escalable (null en recetas planas). Si se borra el componente, sus líneas van con él.
+    `ALTER TABLE recipe_items ADD COLUMN IF NOT EXISTS component_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'recipe_items_component_id_fkey' AND conrelid = 'recipe_items'::regclass
+      ) THEN
+        ALTER TABLE recipe_items ADD CONSTRAINT recipe_items_component_id_fkey
+          FOREIGN KEY (component_id) REFERENCES recipe_components(id) ON DELETE CASCADE;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+    `CREATE INDEX IF NOT EXISTS idx_recipe_items_component ON recipe_items(component_id);`,
+
+    // ============================================
+    // products.recipe_id — enlaza una receta a un producto para autocompletar
+    // cost_price_clp (costo receta / portions) en vez de cargarlo a mano.
+    // ============================================
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS recipe_id UUID;`,
+    `DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'products_recipe_id_fkey' AND conrelid = 'products'::regclass
+      ) THEN
+        ALTER TABLE products ADD CONSTRAINT products_recipe_id_fkey
+          FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL;
+      END IF;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`,
+    `CREATE INDEX IF NOT EXISTS idx_products_recipe ON products(recipe_id);`,
+    // Tamaño objetivo cuando la receta vinculada es escalable — si se dejan en
+    // null, se usa el molde/capas de referencia de la receta.
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_diameter_cm NUMERIC(8,2);`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_height_cm NUMERIC(8,2);`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS target_layers INT;`,
+
+    // Config de energía (reutiliza system_config, mismo patrón que cake_base_price).
+    // Se seedean en 0 — hay que cargar el valor real desde /admin/config.
+    `INSERT INTO system_config (key, value) VALUES ('energy_price_kwh', '0') ON CONFLICT (key) DO NOTHING;`,
+    `INSERT INTO system_config (key, value) VALUES ('energy_price_gas', '0') ON CONFLICT (key) DO NOTHING;`,
 
     // ============================================
     // Tablas: cake builder
@@ -552,7 +685,7 @@ async function runCompleteMigrations() {
     `DO $$
     BEGIN
       IF EXISTS (
-        SELECT 1 FROM pg_constraint 
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'customers_email_key' AND conrelid = 'customers'::regclass
       ) THEN
         ALTER TABLE customers DROP CONSTRAINT customers_email_key;
@@ -561,6 +694,74 @@ async function runCompleteMigrations() {
       WHEN undefined_table THEN NULL;
       WHEN undefined_object THEN NULL;
     END $$;`,
+
+    // ============================================
+    // FEATURE: Motor de Tarifa (Platform Fee Engine)
+    //
+    // Cobra el DUEÑO DE LA PLATAFORMA (no el panadero) por cada orden que
+    // cierra (status=DELIVERED). platform_fee_tiers son reglas de tarifa
+    // configurables por rango de volumen mensual [min, max). Cada fila de
+    // platform_fee_charges es una FOTO del cobro en el momento en que se
+    // generó — nunca se recalcula si la config de tiers cambia después.
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS platform_fee_tiers (
+      id UUID PRIMARY KEY,
+      label TEXT NOT NULL,
+      min_monthly_volume_clp BIGINT NOT NULL CHECK (min_monthly_volume_clp >= 0),
+      max_monthly_volume_clp BIGINT,
+      fee_per_transaction_clp INT NOT NULL CHECK (fee_per_transaction_clp >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT platform_fee_tiers_range_chk
+        CHECK (max_monthly_volume_clp IS NULL OR max_monthly_volume_clp > min_monthly_volume_clp)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_tiers_active
+      ON platform_fee_tiers(is_active, min_monthly_volume_clp);`,
+    `DROP TRIGGER IF EXISTS trg_platform_fee_tiers_updated_at ON platform_fee_tiers;`,
+    `CREATE TRIGGER trg_platform_fee_tiers_updated_at
+      BEFORE UPDATE ON platform_fee_tiers
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    `CREATE TABLE IF NOT EXISTS platform_fee_charges (
+      id UUID PRIMARY KEY,
+      order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
+      order_no BIGINT NOT NULL,
+      order_code TEXT,
+      order_total_clp INT NOT NULL,
+      tier_id UUID REFERENCES platform_fee_tiers(id) ON DELETE SET NULL,
+      tier_label_snapshot TEXT,
+      fee_applied_clp INT NOT NULL CHECK (fee_applied_clp >= 0),
+      is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+      period_month DATE NOT NULL,
+      monthly_volume_at_charge_clp BIGINT NOT NULL,
+      monthly_txn_ordinal INT NOT NULL,
+      source_status TEXT NOT NULL DEFAULT 'DELIVERED',
+      charged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      reversed_at TIMESTAMPTZ,
+      reversed_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_period
+      ON platform_fee_charges(period_month);`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_charged_at
+      ON platform_fee_charges(charged_at DESC);`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_tier
+      ON platform_fee_charges(tier_id);`,
+    `DROP TRIGGER IF EXISTS trg_platform_fee_charges_updated_at ON platform_fee_charges;`,
+    `CREATE TRIGGER trg_platform_fee_charges_updated_at
+      BEFORE UPDATE ON platform_fee_charges
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // Marca informativa (nunca funcional): sembrada UNA sola vez gracias a
+    // ON CONFLICT DO NOTHING. Documenta desde cuándo corre el motor — el
+    // motor jamás cobra retroactivo, esto es solo para mostrar en el
+    // dashboard y como referencia para un backfill manual futuro, si algún
+    // día se decide conscientemente.
+    `INSERT INTO system_config (key, value)
+     VALUES ('platform_fee_engine_activated_at', NOW()::text)
+     ON CONFLICT (key) DO NOTHING;`,
   ];
 
   try {

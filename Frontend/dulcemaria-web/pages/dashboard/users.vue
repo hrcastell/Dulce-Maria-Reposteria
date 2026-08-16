@@ -197,6 +197,12 @@
     >
       <UserForm ref="editFormRef" :user="selectedUser" @submit="handleEditSubmit" />
     </Modal>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -238,11 +244,18 @@ const createFormRef = ref<any>(null)
 const editFormRef = ref<any>(null)
 const selectedUser = ref<User | null>(null)
 const userToDelete = ref<User | null>(null)
-const currentUserEmail = ref('')
+const isPlatformOwner = ref(false)
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
-const canManageUsers = computed(() => {
-  return currentUserEmail.value === 'hernan.castellanos@hrcastell.com'
-})
+// Antes comparaba el email decodificado del JWT contra un email hardcodeado
+// en el código ("hernan.castellanos@hrcastell.com") — mismo problema que ya
+// se consolidó en layouts/dashboard.vue: un email de PII quedaba visible en
+// el bundle JS compilado. Ahora usa el flag `is_platform_owner` que ya
+// devuelve el backend en /auth/login y /auth/me (comparado ahí, server-side,
+// contra la env var PLATFORM_OWNER_EMAIL).
+const canManageUsers = computed(() => isPlatformOwner.value)
 
 const formatRole = (role: string) => {
   const roleMap: Record<string, string> = {
@@ -271,12 +284,11 @@ const loadUsers = async () => {
 
 const getCurrentUser = () => {
   try {
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    currentUserEmail.value = payload.email || ''
+    const userStr = localStorage.getItem('user')
+    if (!userStr) return
+    isPlatformOwner.value = JSON.parse(userStr)?.is_platform_owner === true
   } catch (e: any) {
-    console.error('Error getting current user from token:', e)
+    console.error('Error getting current user:', e)
   }
 }
 
@@ -292,10 +304,15 @@ const handleCreateSubmit = async (data: any) => {
     if (response.ok && response.user) {
       await loadUsers()
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Usuario creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating user:', e)
-    error.value = e?.data?.error || 'Error al crear usuario'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear usuario'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -323,10 +340,15 @@ const handleEditSubmit = async (data: any) => {
       await loadUsers()
       showEditModal.value = false
       selectedUser.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Usuario actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating user:', e)
-    error.value = e?.data?.error || 'Error al actualizar usuario'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar usuario'
+    showNotice.value = true
   } finally {
     saving.value = false
   }

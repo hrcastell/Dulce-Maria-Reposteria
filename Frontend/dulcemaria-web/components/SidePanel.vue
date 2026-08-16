@@ -53,7 +53,7 @@
           <button
             v-if="!hideSubmit"
             type="button"
-            :disabled="loading"
+            :disabled="loading || disableSubmit"
             class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-xl transition-all duration-200"
             @click="$emit('submit')"
           >
@@ -88,6 +88,10 @@ const props = defineProps({
     default: false
   },
   hideSubmit: {
+    type: Boolean,
+    default: false
+  },
+  disableSubmit: {
     type: Boolean,
     default: false
   }

@@ -160,34 +160,34 @@
       </p>
     </div>
 
-    <!-- Create Customer Modal -->
-    <Modal
+    <!-- Create Customer Panel -->
+    <SidePanel
       v-model="showCreateModal"
       title="Nuevo Cliente"
       :loading="saving"
       @submit="handleCreateCustomer"
     >
-      <CustomerForm 
-        ref="customerFormRef" 
+      <CustomerForm
+        ref="customerFormRef"
         :existing-customers="customers"
-        @submit="handleSubmitCustomer" 
+        @submit="handleSubmitCustomer"
       />
-    </Modal>
+    </SidePanel>
 
-    <!-- Edit Customer Modal -->
-    <Modal
+    <!-- Edit Customer Panel -->
+    <SidePanel
       v-model="showEditModal"
       title="Editar Cliente"
       :loading="saving"
       @submit="handleEditCustomer"
     >
-      <CustomerForm 
-        ref="editFormRef" 
-        :customer="selectedCustomer" 
+      <CustomerForm
+        ref="editFormRef"
+        :customer="selectedCustomer"
         :existing-customers="customers"
-        @submit="handleUpdateCustomer" 
+        @submit="handleUpdateCustomer"
       />
-    </Modal>
+    </SidePanel>
 
     <!-- Delete Confirmation -->
     <ConfirmDialog
@@ -196,6 +196,12 @@
       :message="`¿Estás seguro de que deseas eliminar a ${customerToDelete?.full_name}? Esta acción no se puede deshacer.`"
       :loading="deleting"
       @confirm="handleDeleteCustomer"
+    />
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
     />
   </div>
 </template>
@@ -233,6 +239,12 @@ const editFormRef = ref<any>(null)
 const selectedCustomer = ref<Customer | null>(null)
 const customerToDelete = ref<Customer | null>(null)
 const searchQuery = ref('')
+
+// NoticeDialog — mismo patrón que plantilla-costo.vue/motor-tarifa.vue,
+// feedback de éxito/error para crear/editar/eliminar cliente.
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const filteredCustomers = computed(() => {
   if (!searchQuery.value) return customers.value
@@ -273,17 +285,21 @@ const handleCreateCustomer = () => {
 const handleSubmitCustomer = async (data: any) => {
   try {
     saving.value = true
-    error.value = ''
 
     const response = await api.post<{ ok: boolean; customer: Customer }>('/admin/customers', data)
 
     if (response.ok && response.customer) {
       customers.value.unshift(response.customer)
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Cliente creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating customer:', e)
-    error.value = e?.data?.error || 'Error al crear el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear el cliente'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -303,7 +319,6 @@ const handleUpdateCustomer = async (data: any) => {
 
   try {
     saving.value = true
-    error.value = ''
 
     const response = await api.patch<{ ok: boolean; customer: Customer }>(
       `/admin/customers/${selectedCustomer.value.id}`,
@@ -317,10 +332,15 @@ const handleUpdateCustomer = async (data: any) => {
       }
       showEditModal.value = false
       selectedCustomer.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Cliente actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating customer:', e)
-    error.value = e?.data?.error || 'Error al actualizar el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar el cliente'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -336,16 +356,20 @@ const handleDeleteCustomer = async () => {
 
   try {
     deleting.value = true
-    error.value = ''
 
     await api.delete(`/admin/customers/${customerToDelete.value.id}`)
 
     customers.value = customers.value.filter(c => c.id !== customerToDelete.value?.id)
     showDeleteDialog.value = false
     customerToDelete.value = null
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Cliente eliminado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     console.error('Error deleting customer:', e)
-    error.value = e?.data?.error || 'Error al eliminar el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar el cliente'
+    showNotice.value = true
   } finally {
     deleting.value = false
   }

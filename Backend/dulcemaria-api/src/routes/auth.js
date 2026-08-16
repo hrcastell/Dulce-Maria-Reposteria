@@ -6,6 +6,7 @@ const { getPool } = require("../db");
 const { verifyPassword } = require("../utils/password");
 const { loginLimiter, bootstrapLimiter } = require("../middleware/rate-limit");
 const { requireAuth } = require("../middleware/auth");
+const { isPlatformOwner } = require("../lib/platformOwner");
 
 const crypto = require("crypto");
 const { hashPassword } = require("../utils/password");
@@ -62,7 +63,16 @@ router.post("/login", loginLimiter, async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    return res.json({ ok: true, token, user: { id: user.id, email: user.email, role: user.role } });
+    return res.json({
+      ok: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        is_platform_owner: isPlatformOwner(user.email),
+      },
+    });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
@@ -85,7 +95,7 @@ router.get("/me", requireAuth, async (req, res) => {
     }
 
     const user = r.rows[0];
-    return res.json({ ok: true, user });
+    return res.json({ ok: true, user: { ...user, is_platform_owner: isPlatformOwner(user.email) } });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

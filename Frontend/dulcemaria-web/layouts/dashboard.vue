@@ -216,6 +216,7 @@ const formatPrice = (n: number | undefined): string => {
 interface User {
   email: string
   role: string
+  is_platform_owner?: boolean
 }
 
 const user = ref<User | null>(null)
@@ -234,6 +235,7 @@ const navItems = computed(() => {
     { path: '/dashboard/products', label: 'Productos', icon: '🍰' },
     { path: '/dashboard/customers', label: 'Clientes', icon: '👥' },
     { path: '/dashboard/supplies', label: 'Insumos', icon: '🧂' },
+    { path: '/dashboard/plantilla-costo', label: 'Plantilla de Costo', icon: '📖' },
     { path: '/dashboard/cake-builder', label: 'Tortas', icon: '🎂' },
     { path: '/dashboard/hero', label: 'Banners', icon: '🖼️' },
     { path: '/dashboard/reports', label: 'Reportes', icon: '📈' },
@@ -241,11 +243,19 @@ const navItems = computed(() => {
 
   // Add users link only for admin
   if (
-    user.value?.email === 'hernan.castellanos@hrcastell.com' || 
-    user.value?.role === 'GOD' || 
+    user.value?.is_platform_owner === true ||
+    user.value?.role === 'GOD' ||
     user.value?.role === 'SUPERADMIN'
   ) {
     items.push({ path: '/dashboard/users', label: 'Usuarios', icon: '🔐' })
+  }
+
+  // Motor de Tarifa — exclusivo del dueño de la plataforma (el desarrollador
+  // que cobra por el uso de esta app), nunca del dueño de la panadería que
+  // opera esta instancia. A propósito SIN fallback a rol: SUPERADMIN de la
+  // panadería nunca debe ver este link, aunque gestione usuarios.
+  if (user.value?.is_platform_owner === true) {
+    items.push({ path: '/dashboard/motor-tarifa', label: 'Tarifas', icon: '🧾' })
   }
 
   return items
