@@ -245,6 +245,12 @@
         </form>
       </div>
     </div>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -275,6 +281,9 @@ const showModal = ref(false)
 const editingSlide = ref<HeroSlide | null>(null)
 const modalError = ref('')
 const saving = ref(false)
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 // Form state
 const form = reactive({
@@ -403,6 +412,9 @@ const saveSlide = async () => {
     if (res.ok) {
       await loadSlides()
       closeModal()
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Banner guardado correctamente.'
+      showNotice.value = true
     } else {
       throw new Error('Error en la respuesta del servidor')
     }
@@ -420,7 +432,9 @@ const confirmDelete = async (slide: HeroSlide) => {
     await api.delete(`/admin/hero/${slide.id}`)
     await loadSlides()
   } catch (e: any) {
-    alert('Error al eliminar: ' + e.message)
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar el banner'
+    showNotice.value = true
   }
 }
 

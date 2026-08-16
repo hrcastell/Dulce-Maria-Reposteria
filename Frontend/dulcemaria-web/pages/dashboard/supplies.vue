@@ -568,6 +568,12 @@
         </div>
       </div>
     </Modal>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -587,6 +593,9 @@ const tab = ref<'supplies' | 'expenses'>('supplies')
 // los controles que fallarían, en vez de dejar que el usuario los toque y falle.
 const currentUserRole = ref('')
 const canWrite = computed(() => currentUserRole.value !== 'STAFF')
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 // Unidades fijas — antes era texto libre y permitía cargar cosas como "1 Kg" o
 // "30 Unidades" en vez de solo "kg"/"unidad", lo que rompía la conversión (el
@@ -714,9 +723,13 @@ const saveSupply = async () => {
     } else {
       await api.post('/admin/supplies', body)
     }
+    const wasEditing = !!editingSupply.value
     showSupplyModal.value = false
     await loadSupplies()
     await loadAllSupplies()
+    noticeVariant.value = 'success'
+    noticeMessage.value = wasEditing ? 'Insumo actualizado correctamente.' : 'Insumo creado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     supplyFormError.value = e?.data?.error || 'Error al guardar'
   } finally {
@@ -1053,7 +1066,9 @@ const deleteExpense = async (id: string) => {
     await api.delete(`/admin/supplies/expenses/${id}`)
     await loadExpenses()
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al eliminar')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar'
+    showNotice.value = true
   }
 }
 

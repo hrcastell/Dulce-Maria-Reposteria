@@ -685,7 +685,7 @@ async function runCompleteMigrations() {
     `DO $$
     BEGIN
       IF EXISTS (
-        SELECT 1 FROM pg_constraint 
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'customers_email_key' AND conrelid = 'customers'::regclass
       ) THEN
         ALTER TABLE customers DROP CONSTRAINT customers_email_key;
@@ -694,6 +694,74 @@ async function runCompleteMigrations() {
       WHEN undefined_table THEN NULL;
       WHEN undefined_object THEN NULL;
     END $$;`,
+
+    // ============================================
+    // FEATURE: Motor de Tarifa (Platform Fee Engine)
+    //
+    // Cobra el DUEÑO DE LA PLATAFORMA (no el panadero) por cada orden que
+    // cierra (status=DELIVERED). platform_fee_tiers son reglas de tarifa
+    // configurables por rango de volumen mensual [min, max). Cada fila de
+    // platform_fee_charges es una FOTO del cobro en el momento en que se
+    // generó — nunca se recalcula si la config de tiers cambia después.
+    // ============================================
+    `CREATE TABLE IF NOT EXISTS platform_fee_tiers (
+      id UUID PRIMARY KEY,
+      label TEXT NOT NULL,
+      min_monthly_volume_clp BIGINT NOT NULL CHECK (min_monthly_volume_clp >= 0),
+      max_monthly_volume_clp BIGINT,
+      fee_per_transaction_clp INT NOT NULL CHECK (fee_per_transaction_clp >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT platform_fee_tiers_range_chk
+        CHECK (max_monthly_volume_clp IS NULL OR max_monthly_volume_clp > min_monthly_volume_clp)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_tiers_active
+      ON platform_fee_tiers(is_active, min_monthly_volume_clp);`,
+    `DROP TRIGGER IF EXISTS trg_platform_fee_tiers_updated_at ON platform_fee_tiers;`,
+    `CREATE TRIGGER trg_platform_fee_tiers_updated_at
+      BEFORE UPDATE ON platform_fee_tiers
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    `CREATE TABLE IF NOT EXISTS platform_fee_charges (
+      id UUID PRIMARY KEY,
+      order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
+      order_no BIGINT NOT NULL,
+      order_code TEXT,
+      order_total_clp INT NOT NULL,
+      tier_id UUID REFERENCES platform_fee_tiers(id) ON DELETE SET NULL,
+      tier_label_snapshot TEXT,
+      fee_applied_clp INT NOT NULL CHECK (fee_applied_clp >= 0),
+      is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+      period_month DATE NOT NULL,
+      monthly_volume_at_charge_clp BIGINT NOT NULL,
+      monthly_txn_ordinal INT NOT NULL,
+      source_status TEXT NOT NULL DEFAULT 'DELIVERED',
+      charged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      reversed_at TIMESTAMPTZ,
+      reversed_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_period
+      ON platform_fee_charges(period_month);`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_charged_at
+      ON platform_fee_charges(charged_at DESC);`,
+    `CREATE INDEX IF NOT EXISTS idx_platform_fee_charges_tier
+      ON platform_fee_charges(tier_id);`,
+    `DROP TRIGGER IF EXISTS trg_platform_fee_charges_updated_at ON platform_fee_charges;`,
+    `CREATE TRIGGER trg_platform_fee_charges_updated_at
+      BEFORE UPDATE ON platform_fee_charges
+      FOR EACH ROW EXECUTE PROCEDURE set_updated_at();`,
+
+    // Marca informativa (nunca funcional): sembrada UNA sola vez gracias a
+    // ON CONFLICT DO NOTHING. Documenta desde cuándo corre el motor — el
+    // motor jamás cobra retroactivo, esto es solo para mostrar en el
+    // dashboard y como referencia para un backfill manual futuro, si algún
+    // día se decide conscientemente.
+    `INSERT INTO system_config (key, value)
+     VALUES ('platform_fee_engine_activated_at', NOW()::text)
+     ON CONFLICT (key) DO NOTHING;`,
   ];
 
   try {

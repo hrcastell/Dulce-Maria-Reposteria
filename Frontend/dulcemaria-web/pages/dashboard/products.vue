@@ -229,6 +229,12 @@
       :loading="deleting"
       @confirm="handleDeleteProduct"
     />
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -279,6 +285,9 @@ const editFormRef = ref<any>(null)
 const selectedProduct = ref<Product | null>(null)
 const productToDelete = ref<Product | null>(null)
 const searchQuery = ref('')
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const filteredProducts = computed(() => {
   if (!searchQuery.value) return products.value
@@ -367,10 +376,15 @@ const handleSubmitProduct = async (data: any) => {
       }
       await loadProducts()
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Producto creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating product:', e)
-    error.value = e?.data?.error || 'Error al crear el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear el producto'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -413,10 +427,15 @@ const handleUpdateProduct = async (data: any) => {
       await loadProducts()
       showEditModal.value = false
       selectedProduct.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Producto actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating product:', e)
-    error.value = e?.data?.error || 'Error al actualizar el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar el producto'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -441,7 +460,9 @@ const handleDeleteProduct = async () => {
     productToDelete.value = null
   } catch (e: any) {
     console.error('Error deleting product:', e)
-    error.value = e?.data?.error || 'Error al eliminar el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar el producto'
+    showNotice.value = true
   } finally {
     deleting.value = false
   }

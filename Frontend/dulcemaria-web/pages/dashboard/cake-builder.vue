@@ -377,6 +377,12 @@
         <div v-if="optionFormError" class="text-sm text-error-600 bg-error-50 rounded-lg p-3">{{ optionFormError }}</div>
       </div>
     </Modal>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
   </div>
 </template>
 
@@ -399,6 +405,9 @@ const categories = ref<any[]>([])
 const configLoading = ref(false)
 const configError = ref('')
 const basePriceInput = ref(30000)
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n || 0))
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('es-CL')
@@ -438,16 +447,22 @@ const deleteOption = async (opt: any, cat: any) => {
     await api.delete(`/admin/cake/config/options/${opt.id}`)
     cat.options = cat.options.filter((o: any) => o.id !== opt.id)
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al eliminar')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar'
+    showNotice.value = true
   }
 }
 
 const saveBasePrice = async () => {
   try {
     await api.put('/admin/config/cake_base_price', { value: String(basePriceInput.value) })
-    alert('Precio base guardado correctamente.')
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Precio base guardado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al guardar precio base')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al guardar precio base'
+    showNotice.value = true
   }
 }
 
@@ -540,7 +555,9 @@ const removeOptionImage = async () => {
       if (idx >= 0) cat.options[idx].image_url = null
     }
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al eliminar imagen')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar imagen'
+    showNotice.value = true
   }
 }
 
@@ -570,6 +587,9 @@ const saveOption = async () => {
       }
     }
     showOptionModal.value = false
+    noticeVariant.value = 'success'
+    noticeMessage.value = editingOption.value ? 'Opción actualizada correctamente.' : 'Opción creada correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     optionFormError.value = e?.data?.error || 'Error al guardar'
   } finally {
@@ -619,8 +639,13 @@ const changeOrderStatus = async (order: any, newStatus: string) => {
   try {
     await api.patch(`/admin/cake/orders/${order.id}/status`, { status: newStatus })
     order.status = newStatus
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Estado del pedido actualizado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al cambiar estado')
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al cambiar estado'
+    showNotice.value = true
   }
 }
 

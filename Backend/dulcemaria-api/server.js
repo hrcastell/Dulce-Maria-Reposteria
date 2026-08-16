@@ -21,6 +21,7 @@ const adminRecipesRoutes = require("./src/routes/admin.recipes");
 const adminEquipmentRoutes = require("./src/routes/admin.equipment");
 const adminCakeRoutes = require("./src/routes/admin.cake");
 const adminConfigRoutes = require("./src/routes/admin.config");
+const adminPlatformFeesRoutes = require("./src/routes/admin.platformFees");
 const adminHeroRoutes = require("./src/routes/admin.hero");
 const publicCakeRoutes = require("./src/routes/public.cake");
 const publicHeroRoutes = require("./src/routes/public.hero");
@@ -118,6 +119,10 @@ apiRouter.use("/admin/recipes", adminRecipesRoutes);
 apiRouter.use("/admin/equipment", adminEquipmentRoutes);
 apiRouter.use("/admin/cake", adminCakeRoutes);
 apiRouter.use("/admin/config", requireAuth, adminApiLimiter, adminConfigRoutes);
+// Motor de Tarifa: requireAuth pobla req.user; requirePlatformOwner (el
+// gate real, exclusivo del dueño de la plataforma) vive dentro del propio
+// router de admin.platformFees.js.
+apiRouter.use("/admin/platform-fees", requireAuth, adminApiLimiter, adminPlatformFeesRoutes);
 apiRouter.use("/admin/hero", requireAuth, adminApiLimiter, adminHeroRoutes);
 
 // Montar API en raíz y en /dulcemaria (para robustez con Passenger)
