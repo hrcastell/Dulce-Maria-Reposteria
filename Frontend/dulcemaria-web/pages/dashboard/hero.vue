@@ -1,18 +1,17 @@
 <template>
-  <div>
-    <div class="flex justify-between items-center mb-8">
-      <div>
-        <h1 class="text-3xl font-bold text-warm-800">Banners Web</h1>
-        <p class="text-warm-600 mt-2">Gestiona las imágenes y textos del carrusel principal.</p>
-      </div>
-      <button
-        @click="openCreateModal"
-        class="bg-primary-600 text-white px-6 py-2.5 rounded-xl hover:bg-primary-700 transition-colors shadow-soft flex items-center gap-2"
-      >
-        <span>➕</span>
-        Nuevo Banner
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Banners Web" description="Gestiona las imágenes y textos del carrusel principal.">
+      <template #actions>
+        <button
+          @click="openCreateModal"
+          class="bg-primary-600 text-white px-6 py-2.5 rounded-xl hover:bg-primary-700 transition-colors shadow-soft flex items-center gap-2"
+        >
+          <span>➕</span>
+          Nuevo Banner
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Loading State -->
     <div v-if="loading" class="flex justify-center py-12">
@@ -38,7 +37,7 @@
     </div>
 
     <!-- Grid Layout -->
-    <div v-else class="grid grid-cols-1 gap-6">
+    <div v-else class="grid grid-cols-1 gap-4 sm:gap-6">
       <div
         v-for="slide in slides"
         :key="slide.id"
@@ -64,7 +63,7 @@
         </div>
 
         <!-- Content -->
-        <div class="p-6 flex-1 flex flex-col justify-between">
+        <div class="p-4 sm:p-5 flex-1 flex flex-col justify-between">
           <div>
             <div class="flex justify-between items-start mb-2">
               <h3 class="text-xl font-bold text-warm-900">{{ slide.title || '(Sin título)' }}</h3>
@@ -92,7 +91,7 @@
               <span>✏️</span> Editar
             </button>
             <button
-              @click="confirmDelete(slide)"
+              @click="openDeleteDialog(slide)"
               class="px-4 py-2 bg-error-50 text-error-600 rounded-lg hover:bg-error-100 transition-colors font-medium text-sm"
             >
               🗑️
@@ -103,22 +102,18 @@
     </div>
 
     <!-- Modal Form -->
-    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-warm-900/50 backdrop-blur-sm" @click="closeModal"></div>
-      <div class="bg-white rounded-2xl shadow-soft-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative z-10">
-        <div class="p-6 border-b border-warm-100 flex justify-between items-center sticky top-0 bg-white z-20">
-          <h2 class="text-xl font-bold text-warm-900">
-            {{ editingSlide ? 'Editar Banner' : 'Nuevo Banner' }}
-          </h2>
-          <button @click="closeModal" class="text-warm-400 hover:text-warm-600">
-            <span class="text-2xl">×</span>
-          </button>
-        </div>
-
-        <form @submit.prevent="saveSlide" class="p-6 space-y-6">
+    <Modal
+      v-model="showModal"
+      :title="editingSlide ? 'Editar Banner' : 'Nuevo Banner'"
+      :submit-text="saving ? 'Guardando...' : 'Guardar Banner'"
+      :loading="saving"
+      size="xl"
+      @submit="saveSlide"
+    >
+      <form @submit.prevent="saveSlide" class="space-y-6">
           <!-- Image Upload -->
           <div>
-            <label class="block text-sm font-medium text-warm-700 mb-2">Imagen *</label>
+            <label class="label">Imagen *</label>
             <div class="flex items-center gap-6">
               <div 
                 class="w-32 h-20 bg-warm-50 rounded-lg border-2 border-dashed border-warm-200 flex items-center justify-center overflow-hidden relative"
@@ -152,54 +147,54 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Title -->
             <div class="col-span-2">
-              <label class="block text-sm font-medium text-warm-700 mb-1">Título Principal</label>
+              <label class="label">Título Principal</label>
               <input
                 v-model="form.title"
                 type="text"
-                class="w-full px-4 py-2 rounded-lg border border-warm-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition-all"
+                class="input"
                 placeholder="Ej: ¡Ofertas Especiales!"
               />
             </div>
 
             <!-- Subtitle -->
             <div class="col-span-2">
-              <label class="block text-sm font-medium text-warm-700 mb-1">Subtítulo / Descripción</label>
+              <label class="label">Subtítulo / Descripción</label>
               <input
                 v-model="form.subtitle"
                 type="text"
-                class="w-full px-4 py-2 rounded-lg border border-warm-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition-all"
+                class="input"
                 placeholder="Ej: 30% de descuento en tortas personalizadas"
               />
             </div>
 
             <!-- Button Text -->
             <div>
-              <label class="block text-sm font-medium text-warm-700 mb-1">Texto del Botón</label>
+              <label class="label">Texto del Botón</label>
               <input
                 v-model="form.button_text"
                 type="text"
-                class="w-full px-4 py-2 rounded-lg border border-warm-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition-all"
+                class="input"
                 placeholder="Ej: Ver Catálogo"
               />
             </div>
 
             <!-- Button Link -->
             <div>
-              <label class="block text-sm font-medium text-warm-700 mb-1">Enlace del Botón</label>
+              <label class="label">Enlace del Botón</label>
               <input
                 v-model="form.button_link"
                 type="text"
-                class="w-full px-4 py-2 rounded-lg border border-warm-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition-all"
+                class="input"
                 placeholder="Ej: #catalogo"
               />
             </div>
 
             <!-- Status -->
             <div>
-              <label class="block text-sm font-medium text-warm-700 mb-1">Estado</label>
+              <label class="label">Estado</label>
               <select
                 v-model="form.is_active"
-                class="w-full px-4 py-2 rounded-lg border border-warm-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition-all"
+                class="input"
               >
                 <option :value="true">Activo</option>
                 <option :value="false">Inactivo</option>
@@ -208,13 +203,13 @@
             
             <!-- Order (Admin hack) -->
              <div>
-              <label class="block text-sm font-medium text-warm-700 mb-1">Orden (Manual)</label>
+              <label class="label">Orden (Manual)</label>
               <input
                 v-if="editingSlide"
                 type="number"
                 disabled
                 :value="editingSlide.sort_order"
-                class="w-full px-4 py-2 rounded-lg border border-warm-100 bg-warm-50 text-warm-400 cursor-not-allowed"
+                class="input bg-warm-50 text-warm-400 cursor-not-allowed"
               />
               <p v-else class="text-xs text-warm-500 mt-2">Se asignará automáticamente al final.</p>
             </div>
@@ -224,34 +219,24 @@
           <div v-if="modalError" class="bg-error-50 text-error-600 p-3 rounded-lg text-sm">
             {{ modalError }}
           </div>
+      </form>
+    </Modal>
 
-          <div class="flex justify-end gap-3 pt-6 border-t border-warm-100">
-            <button
-              type="button"
-              @click="closeModal"
-              class="px-6 py-2 rounded-xl text-warm-600 hover:bg-warm-50 transition-colors font-medium"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              :disabled="saving"
-              class="px-6 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium shadow-soft disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <span v-if="saving" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-              {{ saving ? 'Guardando...' : 'Guardar Banner' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <ConfirmDialog
+      v-model="showDeleteDialog"
+      title="Eliminar Banner"
+      message="¿Estás seguro de eliminar este banner? Esta acción no se puede deshacer."
+      :loading="deleting"
+      @confirm="handleDeleteSlide"
+    />
 
     <NoticeDialog
       v-model="showNotice"
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -284,6 +269,17 @@ const saving = ref(false)
 const showNotice = ref(false)
 const noticeVariant = ref<'success' | 'error'>('success')
 const noticeMessage = ref('')
+
+// Borrado con <ConfirmDialog> (antes: confirm() nativo)
+const showDeleteDialog = ref(false)
+const slideToDelete = ref<HeroSlide | null>(null)
+const deleting = ref(false)
+
+// El <Modal> compartido cierra vía update:modelValue; replicamos el reset que
+// hacía closeModal() cuando se cierra por el botón Cancelar.
+watch(showModal, (isOpen) => {
+  if (!isOpen) editingSlide.value = null
+})
 
 // Form state
 const form = reactive({
@@ -425,16 +421,27 @@ const saveSlide = async () => {
   }
 }
 
-const confirmDelete = async (slide: HeroSlide) => {
-  if (!confirm('¿Estás seguro de eliminar este banner? Esta acción no se puede deshacer.')) return
-  
+const openDeleteDialog = (slide: HeroSlide) => {
+  slideToDelete.value = slide
+  showDeleteDialog.value = true
+}
+
+const handleDeleteSlide = async () => {
+  if (!slideToDelete.value) return
+
   try {
-    await api.delete(`/admin/hero/${slide.id}`)
+    deleting.value = true
+    await api.delete(`/admin/hero/${slideToDelete.value.id}`)
     await loadSlides()
+    showDeleteDialog.value = false
+    slideToDelete.value = null
   } catch (e: any) {
+    showDeleteDialog.value = false
     noticeVariant.value = 'error'
     noticeMessage.value = e?.data?.error || 'Error al eliminar el banner'
     showNotice.value = true
+  } finally {
+    deleting.value = false
   }
 }
 

@@ -1,15 +1,10 @@
 <template>
-  <div v-if="isOwner">
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Motor de Tarifa</h1>
-        <p class="mt-1 text-warm-500">Cobro por uso de la plataforma</p>
-      </div>
-    </div>
+  <PageContainer v-if="isOwner" as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Motor de Tarifa" description="Cobro por uso de la plataforma" />
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button
         :class="tab === 'lista' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'"
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -154,9 +149,9 @@
             :key="c.id"
             class="bg-white rounded-xl border border-warm-100 shadow-soft overflow-hidden"
           >
-            <div class="flex flex-wrap items-center gap-3 sm:gap-4 p-4">
-              <div class="text-sm text-warm-500 w-36 flex-shrink-0">{{ formatDateTime(c.charged_at) }}</div>
-              <div class="text-sm font-medium text-warm-800 flex-1 min-w-[90px]">{{ c.order_no || c.order_code }}</div>
+            <div class="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 p-4">
+              <div class="text-sm text-warm-500 sm:w-36 flex-shrink-0">{{ formatDateTime(c.charged_at) }}</div>
+              <div class="text-sm font-medium text-warm-800 sm:flex-1">{{ c.order_no || c.order_code }}</div>
               <div class="flex-shrink-0">
                 <span v-if="c.is_fallback" class="text-xs font-medium px-2 py-0.5 rounded-full bg-warning-100 text-warning-600">⚠️ Sin tier</span>
                 <span v-else class="text-xs font-medium px-2 py-0.5 rounded-full bg-warm-100 text-warm-600">{{ c.tier_label_snapshot }}</span>
@@ -263,10 +258,10 @@
             v-for="item in reconciliation.items"
             :key="item.order_id"
             :class="item.is_gap ? 'bg-error-50 border-error-200' : 'bg-white border-warm-100'"
-            class="flex flex-wrap items-center gap-4 p-4 rounded-xl border shadow-soft"
+            class="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 p-4 rounded-xl border shadow-soft"
           >
-            <div class="text-sm text-warm-500 w-28 flex-shrink-0">{{ formatDate(item.created_at) }}</div>
-            <div class="text-sm font-medium text-warm-800 flex-1 min-w-[90px]">{{ item.order_no || item.order_code }}</div>
+            <div class="text-sm text-warm-500 sm:w-28 flex-shrink-0">{{ formatDate(item.created_at) }}</div>
+            <div class="text-sm font-medium text-warm-800 sm:flex-1">{{ item.order_no || item.order_code }}</div>
             <div class="text-sm flex-shrink-0">
               <span v-if="item.is_gap" class="font-semibold text-error-700">⚠️ SIN COBRO</span>
               <span v-else class="text-success-700">✅ Cobrada · ${{ formatPrice(item.fee_applied_clp) }}</span>
@@ -463,7 +458,8 @@
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">

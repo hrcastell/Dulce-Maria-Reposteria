@@ -1,13 +1,10 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Insumos y Gastos</h1>
-      <p class="mt-1 text-warm-500">Control de insumos y registro de gastos</p>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Insumos y Gastos" description="Control de insumos y registro de gastos" />
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button 
         :class="tab === 'supplies' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'" 
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -544,7 +541,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label class="label">Cantidad *</label>
             <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
@@ -574,7 +571,8 @@
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">

@@ -12,7 +12,7 @@
         required
         :disabled="!!user"
         class="input"
-        :class="{ 'bg-gray-100': !!user }"
+        :class="{ 'bg-warm-50 text-warm-400 cursor-not-allowed': !!user }"
         placeholder="usuario@ejemplo.com"
       >
       <p v-if="!!user" class="text-xs text-gray-500 mt-1">El email no se puede modificar</p>
@@ -77,7 +77,7 @@
 
       <div class="space-y-4">
         <!-- Permisos de Productos -->
-        <div class="bg-gray-50 rounded-lg p-4">
+        <div class="bg-warm-50 rounded-xl p-4">
           <h4 class="font-medium text-gray-900 mb-2">🍰 Productos</h4>
           <div class="space-y-2">
             <label class="flex items-center">
@@ -116,7 +116,7 @@
         </div>
 
         <!-- Permisos de Clientes -->
-        <div class="bg-gray-50 rounded-lg p-4">
+        <div class="bg-warm-50 rounded-xl p-4">
           <h4 class="font-medium text-gray-900 mb-2">👥 Clientes</h4>
           <div class="space-y-2">
             <label class="flex items-center">
@@ -155,7 +155,7 @@
         </div>
 
         <!-- Permisos de Órdenes -->
-        <div class="bg-gray-50 rounded-lg p-4">
+        <div class="bg-warm-50 rounded-xl p-4">
           <h4 class="font-medium text-gray-900 mb-2">📦 Órdenes</h4>
           <div class="space-y-2">
             <label class="flex items-center">

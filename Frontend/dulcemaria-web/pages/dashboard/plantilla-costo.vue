@@ -1,25 +1,23 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Plantilla de Costo</h1>
-        <p class="mt-1 text-warm-500">Costeo de recetas a partir del precio de los insumos</p>
-      </div>
-      <button
-        v-if="canWrite && tab === 'recetas'"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft"
-        @click="openCreatePanel"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Nueva Receta</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Plantilla de Costo" description="Costeo de recetas a partir del precio de los insumos">
+      <template #actions>
+        <button
+          v-if="canWrite && tab === 'recetas'"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft"
+          @click="openCreatePanel"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Nueva Receta</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button
         :class="tab === 'recetas' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'"
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -319,7 +317,7 @@
           </label>
           <p class="text-xs text-warm-500 mb-3">Las cantidades se calculan solas para otro diámetro/alto de molde o cantidad de capas, a partir de un tamaño de referencia.</p>
 
-          <div v-if="form.is_scalable" class="animate-fadeIn grid grid-cols-3 gap-3">
+          <div v-if="form.is_scalable" class="animate-fadeIn grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label class="block text-xs font-medium text-warm-600 mb-1">Diámetro ref. (cm)</label>
               <input v-model.number="form.ref_diameter_cm" type="number" min="0" step="any" :disabled="!canWrite" class="input-sm">
@@ -544,7 +542,7 @@
         <div v-if="liveCost" class="pt-4 border-t border-warm-100 space-y-3">
           <div v-if="form.is_scalable" class="p-3 bg-white rounded-xl border border-dashed border-warm-200">
             <p class="text-xs font-medium text-warm-600 mb-2">Vista previa — probá otro tamaño</p>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <input v-model.number="previewDiameter" type="number" min="0" step="any" placeholder="Diám. cm" class="input-sm">
               <input v-model.number="previewHeight" type="number" min="0" step="any" placeholder="Alto cm" class="input-sm">
               <input v-model.number="previewLayers" type="number" min="1" placeholder="Capas" class="input-sm">
@@ -669,7 +667,7 @@
           <template v-else>Vas a descontar los insumos de <strong>{{ editingName }}</strong> y sumar stock al producto vinculado, si tiene.</template>
         </p>
 
-        <div v-if="form.is_scalable" class="grid grid-cols-3 gap-2">
+        <div v-if="form.is_scalable" class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label class="block text-xs font-medium text-warm-600 mb-1">Diámetro (cm)</label>
             <input v-model.number="produceDiameter" type="number" min="0" step="any" class="input-sm">
@@ -800,7 +798,8 @@
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">

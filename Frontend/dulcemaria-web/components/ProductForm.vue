@@ -65,7 +65,7 @@
 
         <div v-if="recipeId && recipeIsScalable" class="p-3 bg-warm-50 rounded-xl border border-warm-100">
           <p class="text-xs font-medium text-warm-600 mb-2">Esta receta es escalable — tamaño de este producto (vacío = usa el tamaño de referencia de la receta)</p>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <input v-model.number="targetDiameterCm" type="number" min="0" step="any" placeholder="Diám. cm" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">
             <input v-model.number="targetHeightCm" type="number" min="0" step="any" placeholder="Alto cm" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">
             <input v-model.number="targetLayers" type="number" min="1" placeholder="Capas" class="px-2 py-1.5 border border-warm-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400" @input="onTargetDimsInput">

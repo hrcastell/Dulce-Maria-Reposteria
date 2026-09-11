@@ -1,13 +1,10 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Tortas Personalizadas</h1>
-      <p class="mt-1 text-warm-500">Configura opciones y gestiona pedidos de tortas personalizadas</p>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Tortas Personalizadas" description="Configura opciones y gestiona pedidos de tortas personalizadas" />
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button 
         :class="tab === 'config' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'" 
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -383,7 +380,8 @@
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
