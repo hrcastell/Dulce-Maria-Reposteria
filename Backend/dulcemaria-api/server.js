@@ -26,6 +26,7 @@ const adminHeroRoutes = require("./src/routes/admin.hero");
 const publicCakeRoutes = require("./src/routes/public.cake");
 const publicHeroRoutes = require("./src/routes/public.hero");
 const { runCompleteMigrations } = require("./src/migrations/complete");
+const { autoBootstrapSuperadmin } = require("./src/bootstrap/autoSuperadmin");
 
 const { requireAuth } = require("./src/middleware/auth");
 const { publicApiLimiter, adminApiLimiter } = require("./src/middleware/rate-limit");
@@ -170,6 +171,10 @@ app.use((err, req, res, next) => {
     console.error("❌ Startup failed:", e?.message || e);
     process.exit(1);
   }
+
+  // Comodidad de desarrollo: crea el primer SUPERADMIN si la BD está vacía.
+  // No corre en producción y nunca bloquea el arranque (ver el módulo).
+  await autoBootstrapSuperadmin();
 
   const PORT = Number(process.env.PORT || 3000);
   app.listen(PORT, () => console.log(`Dulce Maria API listening on port ${PORT}`));
