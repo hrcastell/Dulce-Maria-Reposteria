@@ -1,21 +1,19 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Órdenes</h1>
-        <p class="mt-1 text-warm-500">Gestiona los pedidos de tus clientes</p>
-      </div>
-      <button
-        @click="openCreateModal"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Nueva Orden</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Órdenes" description="Gestiona los pedidos de tus clientes">
+      <template #actions>
+        <button
+          @click="openCreateModal"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Nueva Orden</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
       <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin"></div>
@@ -366,7 +364,8 @@
       :variant="noticeVariant"
       :message="noticeMessage"
     />
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
