@@ -1,21 +1,19 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Clientes</h1>
-        <p class="mt-1 text-warm-500">Gestiona tu base de clientes</p>
-      </div>
-      <button
-        @click="openCreateModal"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Nuevo Cliente</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Clientes" description="Gestiona tu base de clientes">
+      <template #actions>
+        <button
+          @click="openCreateModal"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Nuevo Cliente</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Loading State -->
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
@@ -160,34 +158,34 @@
       </p>
     </div>
 
-    <!-- Create Customer Modal -->
-    <Modal
+    <!-- Create Customer Panel -->
+    <SidePanel
       v-model="showCreateModal"
       title="Nuevo Cliente"
       :loading="saving"
       @submit="handleCreateCustomer"
     >
-      <CustomerForm 
-        ref="customerFormRef" 
+      <CustomerForm
+        ref="customerFormRef"
         :existing-customers="customers"
-        @submit="handleSubmitCustomer" 
+        @submit="handleSubmitCustomer"
       />
-    </Modal>
+    </SidePanel>
 
-    <!-- Edit Customer Modal -->
-    <Modal
+    <!-- Edit Customer Panel -->
+    <SidePanel
       v-model="showEditModal"
       title="Editar Cliente"
       :loading="saving"
       @submit="handleEditCustomer"
     >
-      <CustomerForm 
-        ref="editFormRef" 
-        :customer="selectedCustomer" 
+      <CustomerForm
+        ref="editFormRef"
+        :customer="selectedCustomer"
         :existing-customers="customers"
-        @submit="handleUpdateCustomer" 
+        @submit="handleUpdateCustomer"
       />
-    </Modal>
+    </SidePanel>
 
     <!-- Delete Confirmation -->
     <ConfirmDialog
@@ -197,7 +195,14 @@
       :loading="deleting"
       @confirm="handleDeleteCustomer"
     />
-  </div>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -233,6 +238,12 @@ const editFormRef = ref<any>(null)
 const selectedCustomer = ref<Customer | null>(null)
 const customerToDelete = ref<Customer | null>(null)
 const searchQuery = ref('')
+
+// NoticeDialog — mismo patrón que plantilla-costo.vue/motor-tarifa.vue,
+// feedback de éxito/error para crear/editar/eliminar cliente.
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const filteredCustomers = computed(() => {
   if (!searchQuery.value) return customers.value
@@ -273,17 +284,21 @@ const handleCreateCustomer = () => {
 const handleSubmitCustomer = async (data: any) => {
   try {
     saving.value = true
-    error.value = ''
 
     const response = await api.post<{ ok: boolean; customer: Customer }>('/admin/customers', data)
 
     if (response.ok && response.customer) {
       customers.value.unshift(response.customer)
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Cliente creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating customer:', e)
-    error.value = e?.data?.error || 'Error al crear el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear el cliente'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -303,7 +318,6 @@ const handleUpdateCustomer = async (data: any) => {
 
   try {
     saving.value = true
-    error.value = ''
 
     const response = await api.patch<{ ok: boolean; customer: Customer }>(
       `/admin/customers/${selectedCustomer.value.id}`,
@@ -317,10 +331,15 @@ const handleUpdateCustomer = async (data: any) => {
       }
       showEditModal.value = false
       selectedCustomer.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Cliente actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating customer:', e)
-    error.value = e?.data?.error || 'Error al actualizar el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar el cliente'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -336,16 +355,20 @@ const handleDeleteCustomer = async () => {
 
   try {
     deleting.value = true
-    error.value = ''
 
     await api.delete(`/admin/customers/${customerToDelete.value.id}`)
 
     customers.value = customers.value.filter(c => c.id !== customerToDelete.value?.id)
     showDeleteDialog.value = false
     customerToDelete.value = null
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Cliente eliminado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     console.error('Error deleting customer:', e)
-    error.value = e?.data?.error || 'Error al eliminar el cliente'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar el cliente'
+    showNotice.value = true
   } finally {
     deleting.value = false
   }

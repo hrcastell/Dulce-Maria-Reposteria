@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boleta - Impresora Fiscal (80mm)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ============================================
+           IMPRESORA FISCAL DE ROLLO
+           - Papel de 80mm de ancho, área imprimible 72mm
+             (estándar Epson TM-T20: 576 dots @ 203dpi = 72mm)
+           - El alto se ajusta automáticamente via JavaScript
+             antes de imprimir/exportar PDF (ver printBoleta).
+             El valor 150mm aquí es solo un respaldo.
+           ============================================ */
+        :root {
+            --paper-width: 80mm;      /* ancho del rollo            */
+            --printable-width: 72mm;  /* área imprimible estándar   */
+        }
+
+        @page {
+            size: 80mm 150mm; /* respaldo: JS ajusta el alto real antes de imprimir */
+            margin: 0;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            line-height: 1.35;
+            color: #000;
+            background: #fff;
+        }
+
+        /* ============================================
+           BOLETA (área imprimible ~72mm)
+           ============================================ */
+        .boleta {
+            width: var(--printable-width);
+            margin: 0 auto;
+            padding: 2mm;
+        }
+
+        /* Cabecera: empresa */
+        .header {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .company-name {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: pre-line;
+        }
+
+        .company-details {
+            font-size: 10px;
+            white-space: pre-line;
+        }
+
+        .divider {
+            border-top: 1px dashed #000;
+            margin: 6px 0;
+        }
+
+        /* Datos de la boleta */
+        .meta {
+            font-size: 11px;
+            margin-bottom: 6px;
+            white-space: pre-line;
+        }
+
+        .meta .row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Listado de artículos */
+        .items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 6px;
+        }
+
+        .items th {
+            text-align: left;
+            font-size: 10px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+        }
+
+        .items th.right, .items td.right {
+            text-align: right;
+        }
+
+        .items td {
+            padding: 1px 0;
+            vertical-align: top;
+            font-size: 11px;
+        }
+
+        .items td.desc {
+            word-break: break-word;
+        }
+
+        /* Totalización */
+        .totals {
+            margin-bottom: 6px;
+        }
+
+        .totals .row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .totals .grand {
+            font-weight: 700;
+            font-size: 13px;
+            border-top: 1px solid #000;
+            padding-top: 3px;
+            margin-top: 3px;
+        }
+
+        /* Código de barras */
+        .barcode {
+            text-align: center;
+            margin: 8px 0;
+        }
+
+        .barcode-bars {
+            height: 14mm;
+            margin: 0 auto;
+            /* Placeholder: patrón de barras generado por CSS.
+               Reemplazar por una imagen <img> o canvas en producción. */
+            background: repeating-linear-gradient(
+                to right,
+                #000 0px, #000 1px,
+                #fff 1px, #fff 2px,
+                #000 2px, #000 4px,
+                #fff 4px, #fff 5px,
+                #000 5px, #000 6px,
+                #fff 6px, #fff 8px
+            );
+        }
+
+        .barcode-text {
+            font-size: 12px;
+            margin-top: 2px;
+            letter-spacing: 2px;
+        }
+
+        /* Pie */
+        .footer {
+            text-align: center;
+            font-size: 10px;
+            margin-top: 8px;
+            white-space: pre-line;
+        }
+
+        /* ============================================
+           PANTALLA (vista previa) — no se imprime
+           ============================================ */
+        .no-print {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        .toolbar {
+            text-align: center;
+            padding: 16px;
+            background: #e9ecef;
+        }
+
+        .toolbar button {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 24px;
+            border: none;
+            border-radius: 4px;
+            background: #2c3e50;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .toolbar button:hover {
+            background: #1a252f;
+        }
+
+        @media screen {
+            body {
+                background: #e9ecef;
+                padding-bottom: 30px;
+            }
+
+            .boleta {
+                background: #fff;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                margin-top: 20px;
+            }
+        }
+
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+
+            .boleta {
+                width: var(--printable-width);
+                margin: 0 auto; /* centrada en el rollo: el texto no se va hacia la izquierda */
+                padding: 0;
+                box-shadow: none;
+                page-break-inside: avoid;
+            }
+
+            tr {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- BARRA DE HERRAMIENTAS (no se imprime) -->
+    <div class="toolbar no-print">
+        <button onclick="printBoleta()">🖨 Imprimir Boleta</button>
+    </div>
+
+    <!-- BOLETA -->
+    <div class="boleta">
+        <!-- CABECERA: EMPRESA -->
+        <div class="header">
+            <div class="company-name" id="company-name">NOMBRE DE LA EMPRESA</div>
+            <div class="company-details" id="company-details">
+                RUT: 00.000.000-0
+                Dirección: Calle 123 #456, Ciudad
+                Tel: +56 9 1234 5678
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- DATOS DE LA BOLETA -->
+        <div class="meta">
+            <div class="row">
+                <span>BOLETA N°</span>
+                <span id="boleta-number">000001</span>
+            </div>
+            <div class="row">
+                <span>FECHA</span>
+                <span id="boleta-date">01/01/2026</span>
+            </div>
+            <div class="row">
+                <span>HORA</span>
+                <span id="boleta-time">00:00</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- LISTADO DE ARTICULOS -->
+        <table class="items" id="items-table">
+            <thead>
+                <tr>
+                    <th>Artículo</th>
+                    <th class="right">Cant.</th>
+                    <th class="right">Val.Unit.</th>
+                    <th class="right">Total</th>
+                </tr>
+            </thead>
+            <tbody id="items-body">
+                <!-- Artículos insertados dinámicamente via JavaScript -->
+            </tbody>
+        </table>
+
+        <!-- TOTALIZACION -->
+        <div class="totals">
+            <div class="row">
+                <span>Subtotal</span>
+                <span id="subtotal">$ 0</span>
+            </div>
+            <div class="row" id="delivery-row" style="display:none;">
+                <span>Envío</span>
+                <span id="delivery-amount">$ 0</span>
+            </div>
+            <div class="row" id="discount-row" style="display:none;">
+                <span>Descuento</span>
+                <span id="discount-amount">$ 0</span>
+            </div>
+            <div class="row grand">
+                <span>TOTAL</span>
+                <span id="grand-total">$ 0</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CODIGO DE BARRAS (placeholder) -->
+        <div class="barcode">
+            <div class="barcode-bars"></div>
+            <div class="barcode-text" id="barcode-text">*000001*</div>
+        </div>
+
+        <!-- PIE -->
+        <div class="footer" id="footer">
+            ¡Gracias por su compra!
+            Documento no válido como factura.
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURACIÓN DE LA BOLETA
+        // ============================================
+        const boletaConfig = {
+            // Dimensiones del papel (impresora fiscal)
+            paper: {
+                rollWidth: 80,    // ancho del rollo en mm (80 o 58)
+                printable: 72     // área imprimible en mm (72 para rollo 80mm, 48 para 58mm)
+            },
+
+            // Datos de la empresa — fijos (no cambian de una orden a otra).
+            // Completá RUT/dirección/teléfono reales acá una sola vez.
+            company: {
+                name: "DULCE MARÍA REPOSTERÍA",
+                rut: "Completar RUT",
+                address: "Completar dirección",
+                phone: "Completar teléfono"
+            },
+
+            // Datos de la boleta — se sobreescriben por orden real (ver
+            // "CARGA DE DATOS POR ORDEN" más abajo). Estos valores son solo
+            // el modelo de ejemplo cuando se abre la plantilla directo.
+            boleta: {
+                number: "000001",
+                date: "15/08/2026",
+                time: "14:30",
+                // Código que iría dentro de la barra (puede incluir dígito verificador)
+                barcode: "000001"
+            },
+
+            // Artículos: nombre, cantidad, valor unitario. Se sobreescribe por orden real.
+            items: [
+                { description: "Producto de ejemplo 1", quantity: 2, unitPrice: 1500 },
+                { description: "Producto de ejemplo 2", quantity: 1, unitPrice: 3200 },
+                { description: "Producto de ejemplo 3", quantity: 5, unitPrice: 800 }
+            ],
+
+            // Totales — DulceMaría no maneja IVA como línea separada (las
+            // órdenes no tienen ese campo), así que se totaliza con lo que
+            // la orden sí registra: envío y descuento. Cualquiera de los
+            // tres puede venir en 0 — el render oculta la fila si no aplica.
+            // `subtotal`/`total` en null se recalculan solos desde `items`.
+            totals: {
+                subtotal: null,
+                deliveryFee: 0,
+                discount: 0,
+                total: null
+            },
+
+            // Mensaje del pie de la boleta
+            footer: "¡Gracias por su compra!\nDocumento no válido como factura."
+        };
+
+        // ============================================
+        // FUNCIONES DE UTILIDAD
+        // ============================================
+        function formatCurrency(value) {
+            return '$' + new Intl.NumberFormat('es-CL', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(value);
+        }
+
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        // ============================================
+        // RENDERIZADO DE LA PLANTILLA
+        // ============================================
+        function renderBoleta() {
+            const cfg = boletaConfig;
+
+            // --- Empresa ---
+            setText('company-name', cfg.company.name);
+            setText('company-details', [
+                `RUT: ${cfg.company.rut}`,
+                cfg.company.address,
+                `Tel: ${cfg.company.phone}`
+            ].join('\n'));
+
+            // --- Datos de la boleta ---
+            setText('boleta-number', cfg.boleta.number);
+            setText('boleta-date', cfg.boleta.date);
+            setText('boleta-time', cfg.boleta.time);
+
+            // --- Artículos ---
+            renderItems(cfg.items);
+
+            // --- Totales ---
+            renderTotals(cfg.items, cfg.totals);
+
+            // --- Código de barras ---
+            setText('barcode-text', `*${cfg.boleta.barcode}*`);
+
+            // --- Pie ---
+            setText('footer', cfg.footer);
+        }
+
+        function renderItems(items) {
+            const tbody = document.getElementById('items-body');
+            tbody.innerHTML = '';
+
+            items.forEach((item) => {
+                const total = item.quantity * item.unitPrice;
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="desc">${escapeHtml(item.description)}</td>
+                    <td class="right">${item.quantity}</td>
+                    <td class="right">${formatCurrency(item.unitPrice)}</td>
+                    <td class="right">${formatCurrency(total)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function renderTotals(items, totalsCfg) {
+            const cfg = totalsCfg || {};
+            const itemsSum = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+            const subtotal = cfg.subtotal != null ? cfg.subtotal : itemsSum;
+            const deliveryFee = cfg.deliveryFee || 0;
+            const discount = cfg.discount || 0;
+            const total = cfg.total != null ? cfg.total : Math.max(0, subtotal + deliveryFee - discount);
+
+            setText('subtotal', formatCurrency(subtotal));
+
+            const deliveryRow = document.getElementById('delivery-row');
+            if (deliveryFee > 0) {
+                deliveryRow.style.display = '';
+                setText('delivery-amount', formatCurrency(deliveryFee));
+            } else {
+                deliveryRow.style.display = 'none';
+            }
+
+            const discountRow = document.getElementById('discount-row');
+            if (discount > 0) {
+                discountRow.style.display = '';
+                setText('discount-amount', '-' + formatCurrency(discount));
+            } else {
+                discountRow.style.display = 'none';
+            }
+
+            setText('grand-total', formatCurrency(total));
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============================================
+        // IMPRESIÓN / EXPORTAR PDF
+        // ============================================
+        function printBoleta() {
+            // 1. Ajustar el ancho según la config del papel
+            const paper = boletaConfig.paper;
+            document.documentElement.style.setProperty('--paper-width', paper.rollWidth + 'mm');
+            document.documentElement.style.setProperty('--printable-width', paper.printable + 'mm');
+
+            // 2. Medir la altura real del tiquete (en mm) para que
+            //    el @page (y el PDF resultante) tenga las dimensiones
+            //    exactas del rollo y NO caiga a Carta/Letter.
+            const boleta = document.querySelector('.boleta');
+            const heightMm = Math.ceil((boleta.scrollHeight / 96) * 25.4) + 5; // 5mm de margen
+
+            // 3. Inyectar @page con alto fijo antes de imprimir
+            const style = document.getElementById('dynamic-page-size') || document.createElement('style');
+            style.id = 'dynamic-page-size';
+            style.textContent = `@page { size: ${paper.rollWidth}mm ${heightMm}mm; margin: 0; }`;
+            document.head.appendChild(style);
+
+            // 4. Imprimir / guardar como PDF
+            window.print();
+        }
+
+        // ============================================
+        // CARGA DE DATOS POR ORDEN
+        // ============================================
+        // Esta plantilla es un modelo — sirve tal cual (con los datos de
+        // ejemplo de arriba) cuando se abre directo, pero el dashboard la
+        // abre en una pestaña nueva dejando la boleta de la orden real en
+        // sessionStorage ANTES de abrirla (ver orders.vue, función
+        // `printOrder`). Solo se pisan `boleta`/`items`/`totals` — `company`
+        // es config fija de la plantilla, no cambia por orden.
+        function loadOrderDataIfPresent() {
+            try {
+                const raw = sessionStorage.getItem('boleta_print_data');
+                if (!raw) return;
+                sessionStorage.removeItem('boleta_print_data');
+
+                const data = JSON.parse(raw);
+                if (data.boleta) Object.assign(boletaConfig.boleta, data.boleta);
+                if (data.items) boletaConfig.items = data.items;
+                if (data.totals) Object.assign(boletaConfig.totals, data.totals);
+            } catch (e) {
+                console.error('No se pudieron cargar los datos de la orden, se muestra el modelo de ejemplo.', e);
+            }
+        }
+
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadOrderDataIfPresent();
+            renderBoleta();
+        });
+
+        // Exponer funciones globalmente para uso desde consola
+        window.BoletaTemplate = {
+            config: boletaConfig,
+            render: renderBoleta,
+            print: printBoleta,
+            formatCurrency
+        };
+    </script>
+</body>
+</html>

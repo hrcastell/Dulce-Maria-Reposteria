@@ -1,44 +1,44 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div>
     <!-- Header -->
     <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center">
-          <h1 class="text-3xl font-bold text-gray-900">
+      <PageContainer class="py-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h1 class="text-2xl sm:text-3xl font-bold text-warm-800 min-w-0">
             🍰 Catálogo de Productos
           </h1>
-          <NuxtLink to="/" class="text-sm text-primary-600 hover:text-primary-500">
+          <NuxtLink to="/" class="text-sm text-primary-600 hover:text-primary-500 flex-shrink-0">
             ← Volver
           </NuxtLink>
         </div>
-      </div>
+      </PageContainer>
     </header>
 
     <!-- Content -->
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+    <PageContainer as="main" class="py-6">
       <div v-if="loading" class="flex justify-center items-center py-12">
-        <div class="text-gray-500">Cargando productos...</div>
+        <div class="text-warm-500">Cargando productos...</div>
       </div>
 
-      <div v-else-if="error" class="rounded-md bg-red-50 p-4 mx-4">
+      <div v-else-if="error" class="rounded-xl bg-error-50 border border-error-100 p-4">
         <div class="flex">
           <div class="ml-3">
-            <h3 class="text-sm font-medium text-red-800">
+            <h3 class="text-sm font-medium text-error-700">
               Error al cargar productos: {{ error }}
             </h3>
           </div>
         </div>
       </div>
 
-      <div v-else-if="products.length > 0" class="px-4 py-6">
-        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div v-else-if="products.length > 0">
+        <div class="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div
             v-for="product in products"
             :key="product.id"
             class="card hover:shadow-lg transition-shadow duration-200"
           >
             <!-- Product Image -->
-            <div class="w-full h-48 bg-gray-100 rounded-lg mb-4 overflow-hidden flex items-center justify-center">
+            <div class="w-full h-48 bg-warm-100 rounded-lg mb-4 overflow-hidden flex items-center justify-center">
               <img
                 v-if="product.thumb_url"
                 :src="getImageUrl(product.thumb_url)"
@@ -50,11 +50,11 @@
             </div>
 
             <!-- Product Info -->
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">
+            <h3 class="text-lg font-semibold text-warm-800 mb-2">
               {{ product.name }}
             </h3>
-            
-            <p v-if="product.description" class="text-sm text-gray-600 mb-4 line-clamp-2">
+
+            <p v-if="product.description" class="text-sm text-warm-600 mb-4 line-clamp-2">
               {{ product.description }}
             </p>
 
@@ -64,11 +64,11 @@
               </span>
               <span
                 v-if="product.stock_qty > 0"
-                class="text-sm text-green-600"
+                class="text-sm text-success-600"
               >
                 Stock: {{ product.stock_qty }}
               </span>
-              <span v-else class="text-sm text-red-600">
+              <span v-else class="text-sm text-error-600">
                 Sin stock
               </span>
             </div>
@@ -77,13 +77,17 @@
       </div>
 
       <div v-else class="text-center py-12">
-        <p class="text-gray-500">No hay productos disponibles en este momento.</p>
+        <p class="text-warm-500">No hay productos disponibles en este momento.</p>
       </div>
-    </main>
+    </PageContainer>
   </div>
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout: 'public'
+})
+
 const config = useRuntimeConfig()
 
 useHead({

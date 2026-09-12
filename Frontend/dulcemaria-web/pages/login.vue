@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-warm-50 to-secondary-50 py-12 px-4 sm:px-6 lg:px-8">
+  <div class="min-h-dvh flex items-center justify-center bg-gradient-to-br from-primary-50 via-warm-50 to-secondary-50 py-12 px-4 sm:px-6 lg:px-8">
     <!-- Decorative Elements -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div class="absolute -top-40 -right-40 w-80 h-80 bg-primary-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-soft"></div>
@@ -8,7 +8,7 @@
 
     <div class="relative max-w-md w-full">
       <!-- Card -->
-      <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-soft-lg p-8 sm:p-10">
+      <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-soft-lg p-6 sm:p-8">
         <!-- Logo & Header -->
         <div class="text-center mb-8">
           <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-100 to-primary-200 mb-4 shadow-soft">

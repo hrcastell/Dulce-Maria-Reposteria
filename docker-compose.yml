@@ -58,6 +58,11 @@ services:
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PLATFORM_OWNER_EMAIL: ${PLATFORM_OWNER_EMAIL}
+      # Dev-only: crea el primer SUPERADMIN al arrancar si la tabla users
+      # está vacía (src/bootstrap/autoSuperadmin.js). Poné `false` en .env
+      # para desactivarlo. Nunca corre con NODE_ENV=production.
+      AUTO_BOOTSTRAP_SUPERADMIN: ${AUTO_BOOTSTRAP_SUPERADMIN:-true}
     ports:
       - "4301:3000"
     volumes:

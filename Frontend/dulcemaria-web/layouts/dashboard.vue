@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-warm-50">
+  <div class="min-h-dvh bg-warm-50">
     <!-- Mobile Header -->
     <header class="lg:hidden bg-white shadow-soft sticky top-0 z-40">
       <div class="flex items-center justify-between px-4 py-3">
@@ -60,7 +60,8 @@
       </Transition>
     </header>
 
-    <div class="flex min-h-[calc(100vh-64px)] lg:min-h-screen">
+    <!-- Fila layout: columna flex normal; el alto lo da el contenido (piso: min-h-dvh de la raíz) -->
+    <div class="flex lg:min-h-screen">
       <!-- Desktop Sidebar -->
       <aside class="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white shadow-soft-lg">
         <!-- Logo -->
@@ -112,11 +113,11 @@
       </aside>
 
       <!-- Main Content -->
-      <main class="flex-1 lg:ml-64">
-        <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-          <slot />
-        </div>
-      </main>
+      <!-- El molde de página (ancho, gutter, ritmo vertical) lo aporta cada
+           página vía <PageContainer as="main">, no este contenedor. -->
+      <div class="flex-1 lg:ml-64 min-w-0">
+        <slot />
+      </div>
     </div>
 
     <!-- Notification Toast -->
@@ -130,7 +131,7 @@
     >
       <div
         v-if="showToast && toastOrder"
-        class="fixed bottom-6 right-6 z-[70] max-w-sm w-full bg-white rounded-2xl shadow-2xl border border-primary-100 overflow-hidden"
+        class="fixed inset-x-4 bottom-6 z-[60] sm:inset-x-auto sm:right-6 sm:w-full sm:max-w-sm bg-white rounded-2xl shadow-2xl border border-primary-100 overflow-hidden"
       >
         <div class="bg-primary-50 px-5 py-4 flex items-start gap-3">
           <div class="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-xl flex-shrink-0">
@@ -216,6 +217,7 @@ const formatPrice = (n: number | undefined): string => {
 interface User {
   email: string
   role: string
+  is_platform_owner?: boolean
 }
 
 const user = ref<User | null>(null)
@@ -234,6 +236,7 @@ const navItems = computed(() => {
     { path: '/dashboard/products', label: 'Productos', icon: '🍰' },
     { path: '/dashboard/customers', label: 'Clientes', icon: '👥' },
     { path: '/dashboard/supplies', label: 'Insumos', icon: '🧂' },
+    { path: '/dashboard/plantilla-costo', label: 'Plantilla de Costo', icon: '📖' },
     { path: '/dashboard/cake-builder', label: 'Tortas', icon: '🎂' },
     { path: '/dashboard/hero', label: 'Banners', icon: '🖼️' },
     { path: '/dashboard/reports', label: 'Reportes', icon: '📈' },
@@ -241,11 +244,19 @@ const navItems = computed(() => {
 
   // Add users link only for admin
   if (
-    user.value?.email === 'hernan.castellanos@hrcastell.com' || 
-    user.value?.role === 'GOD' || 
+    user.value?.is_platform_owner === true ||
+    user.value?.role === 'GOD' ||
     user.value?.role === 'SUPERADMIN'
   ) {
     items.push({ path: '/dashboard/users', label: 'Usuarios', icon: '🔐' })
+  }
+
+  // Motor de Tarifa — exclusivo del dueño de la plataforma (el desarrollador
+  // que cobra por el uso de esta app), nunca del dueño de la panadería que
+  // opera esta instancia. A propósito SIN fallback a rol: SUPERADMIN de la
+  // panadería nunca debe ver este link, aunque gestione usuarios.
+  if (user.value?.is_platform_owner === true) {
+    items.push({ path: '/dashboard/motor-tarifa', label: 'Tarifas', icon: '🧾' })
   }
 
   return items

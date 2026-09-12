@@ -1,21 +1,19 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Productos</h1>
-        <p class="mt-1 text-warm-500">Gestiona tu catálogo de productos</p>
-      </div>
-      <button
-        @click="openCreateModal"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Nuevo Producto</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Productos" description="Gestiona tu catálogo de productos">
+      <template #actions>
+        <button
+          @click="openCreateModal"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Nuevo Producto</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Loading State -->
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
@@ -229,7 +227,14 @@
       :loading="deleting"
       @confirm="handleDeleteProduct"
     />
-  </div>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -256,6 +261,13 @@ interface Product {
   is_active: boolean
   thumb_url?: string
   images?: any[]
+  recipe_id?: string | null
+  recipe_name?: string | null
+  recipe_is_scalable?: boolean
+  target_diameter_cm?: number | null
+  target_height_cm?: number | null
+  target_layers?: number | null
+  cost_from_recipe?: boolean
 }
 
 const products = ref<Product[]>([])
@@ -272,6 +284,9 @@ const editFormRef = ref<any>(null)
 const selectedProduct = ref<Product | null>(null)
 const productToDelete = ref<Product | null>(null)
 const searchQuery = ref('')
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
 const filteredProducts = computed(() => {
   if (!searchQuery.value) return products.value
@@ -360,10 +375,15 @@ const handleSubmitProduct = async (data: any) => {
       }
       await loadProducts()
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Producto creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating product:', e)
-    error.value = e?.data?.error || 'Error al crear el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear el producto'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -406,10 +426,15 @@ const handleUpdateProduct = async (data: any) => {
       await loadProducts()
       showEditModal.value = false
       selectedProduct.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Producto actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating product:', e)
-    error.value = e?.data?.error || 'Error al actualizar el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar el producto'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -434,7 +459,9 @@ const handleDeleteProduct = async () => {
     productToDelete.value = null
   } catch (e: any) {
     console.error('Error deleting product:', e)
-    error.value = e?.data?.error || 'Error al eliminar el producto'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al eliminar el producto'
+    showNotice.value = true
   } finally {
     deleting.value = false
   }

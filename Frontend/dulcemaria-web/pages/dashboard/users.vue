@@ -1,22 +1,20 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Gestión de Usuarios</h1>
-        <p class="mt-1 text-warm-500">Administra usuarios y sus permisos</p>
-      </div>
-      <button
-        v-if="canManageUsers"
-        @click="showCreateModal = true"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Crear Usuario</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Gestión de Usuarios" description="Administra usuarios y sus permisos">
+      <template #actions>
+        <button
+          v-if="canManageUsers"
+          @click="showCreateModal = true"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Crear Usuario</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <div v-if="!canManageUsers" class="rounded-2xl bg-warning-50 border border-warning-100 p-6">
       <div class="flex items-start gap-4">
@@ -32,20 +30,20 @@
       </div>
     </div>
 
-    <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
+    <div v-else class="space-y-3">
       <div v-if="loading" class="flex flex-col items-center justify-center py-16">
         <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin"></div>
         <p class="mt-4 text-warm-500">Cargando usuarios...</p>
       </div>
 
-      <div v-else-if="error" class="rounded-2xl bg-error-50 border border-error-100 p-6 m-6">
+      <div v-else-if="error" class="rounded-2xl bg-error-50 border border-error-100 p-6">
         <div class="flex items-center gap-3">
           <span class="text-error-500 text-xl">⚠️</span>
           <p class="text-error-700">{{ error }}</p>
         </div>
       </div>
 
-      <div v-else-if="users.length === 0" class="text-center py-16">
+      <div v-else-if="users.length === 0" class="text-center py-16 bg-white rounded-2xl shadow-soft border border-warm-100">
         <div class="w-20 h-20 bg-warm-50 rounded-full flex items-center justify-center mx-auto mb-4">
           <span class="text-4xl">👤</span>
         </div>
@@ -63,7 +61,7 @@
       </div>
 
       <!-- Desktop Table -->
-      <div v-if="!loading && !error && users.length > 0" class="hidden sm:block">
+      <div v-if="!loading && !error && users.length > 0" class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
         <table class="min-w-full divide-y divide-warm-100">
           <thead class="bg-warm-50">
             <tr>
@@ -132,7 +130,7 @@
       </div>
 
       <!-- Mobile Cards -->
-      <div v-if="!loading && !error && users.length > 0" class="sm:hidden space-y-3 p-4">
+      <div v-if="!loading && !error && users.length > 0" class="sm:hidden space-y-3">
         <div v-for="user in users" :key="user.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
           <div class="flex items-start gap-3">
             <div class="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-xl font-semibold text-primary-600 flex-shrink-0">
@@ -197,7 +195,14 @@
     >
       <UserForm ref="editFormRef" :user="selectedUser" @submit="handleEditSubmit" />
     </Modal>
-  </div>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -238,11 +243,18 @@ const createFormRef = ref<any>(null)
 const editFormRef = ref<any>(null)
 const selectedUser = ref<User | null>(null)
 const userToDelete = ref<User | null>(null)
-const currentUserEmail = ref('')
+const isPlatformOwner = ref(false)
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
 
-const canManageUsers = computed(() => {
-  return currentUserEmail.value === 'hernan.castellanos@hrcastell.com'
-})
+// Antes comparaba el email decodificado del JWT contra un email hardcodeado
+// en el código ("hernan.castellanos@hrcastell.com") — mismo problema que ya
+// se consolidó en layouts/dashboard.vue: un email de PII quedaba visible en
+// el bundle JS compilado. Ahora usa el flag `is_platform_owner` que ya
+// devuelve el backend en /auth/login y /auth/me (comparado ahí, server-side,
+// contra la env var PLATFORM_OWNER_EMAIL).
+const canManageUsers = computed(() => isPlatformOwner.value)
 
 const formatRole = (role: string) => {
   const roleMap: Record<string, string> = {
@@ -271,12 +283,11 @@ const loadUsers = async () => {
 
 const getCurrentUser = () => {
   try {
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    currentUserEmail.value = payload.email || ''
+    const userStr = localStorage.getItem('user')
+    if (!userStr) return
+    isPlatformOwner.value = JSON.parse(userStr)?.is_platform_owner === true
   } catch (e: any) {
-    console.error('Error getting current user from token:', e)
+    console.error('Error getting current user:', e)
   }
 }
 
@@ -292,10 +303,15 @@ const handleCreateSubmit = async (data: any) => {
     if (response.ok && response.user) {
       await loadUsers()
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Usuario creado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating user:', e)
-    error.value = e?.data?.error || 'Error al crear usuario'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear usuario'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -323,10 +339,15 @@ const handleEditSubmit = async (data: any) => {
       await loadUsers()
       showEditModal.value = false
       selectedUser.value = null
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Usuario actualizado correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error updating user:', e)
-    error.value = e?.data?.error || 'Error al actualizar usuario'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar usuario'
+    showNotice.value = true
   } finally {
     saving.value = false
   }

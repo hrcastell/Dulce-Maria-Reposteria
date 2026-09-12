@@ -17,12 +17,16 @@ const adminOrdersRoutes = require("./src/routes/admin.orders");
 const adminReportsRoutes = require("./src/routes/admin.reports");
 const adminSuppliesRoutes = require("./src/routes/admin.supplies");
 const adminProvidersRoutes = require("./src/routes/admin.providers");
+const adminRecipesRoutes = require("./src/routes/admin.recipes");
+const adminEquipmentRoutes = require("./src/routes/admin.equipment");
 const adminCakeRoutes = require("./src/routes/admin.cake");
 const adminConfigRoutes = require("./src/routes/admin.config");
+const adminPlatformFeesRoutes = require("./src/routes/admin.platformFees");
 const adminHeroRoutes = require("./src/routes/admin.hero");
 const publicCakeRoutes = require("./src/routes/public.cake");
 const publicHeroRoutes = require("./src/routes/public.hero");
 const { runCompleteMigrations } = require("./src/migrations/complete");
+const { autoBootstrapSuperadmin } = require("./src/bootstrap/autoSuperadmin");
 
 const { requireAuth } = require("./src/middleware/auth");
 const { publicApiLimiter, adminApiLimiter } = require("./src/middleware/rate-limit");
@@ -112,8 +116,14 @@ apiRouter.use("/admin/users", adminUsersRoutes);
 apiRouter.use("/admin/products", adminProductsRoutes);
 apiRouter.use("/admin/supplies", adminSuppliesRoutes);
 apiRouter.use("/admin/providers", adminProvidersRoutes);
+apiRouter.use("/admin/recipes", adminRecipesRoutes);
+apiRouter.use("/admin/equipment", adminEquipmentRoutes);
 apiRouter.use("/admin/cake", adminCakeRoutes);
 apiRouter.use("/admin/config", requireAuth, adminApiLimiter, adminConfigRoutes);
+// Motor de Tarifa: requireAuth pobla req.user; requirePlatformOwner (el
+// gate real, exclusivo del dueño de la plataforma) vive dentro del propio
+// router de admin.platformFees.js.
+apiRouter.use("/admin/platform-fees", requireAuth, adminApiLimiter, adminPlatformFeesRoutes);
 apiRouter.use("/admin/hero", requireAuth, adminApiLimiter, adminHeroRoutes);
 
 // Montar API en raíz y en /dulcemaria (para robustez con Passenger)
@@ -161,6 +171,10 @@ app.use((err, req, res, next) => {
     console.error("❌ Startup failed:", e?.message || e);
     process.exit(1);
   }
+
+  // Comodidad de desarrollo: crea el primer SUPERADMIN si la BD está vacía.
+  // No corre en producción y nunca bloquea el arranque (ver el módulo).
+  await autoBootstrapSuperadmin();
 
   const PORT = Number(process.env.PORT || 3000);
   app.listen(PORT, () => console.log(`Dulce Maria API listening on port ${PORT}`));
