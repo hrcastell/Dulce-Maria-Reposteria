@@ -8,14 +8,17 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "node scripts/copy-tesseract-assets.mjs && nuxt prepare"
   },
   "dependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",
     "chart.js": "^4.5.1",
     "nuxt": "^3.14.0",
+    "pdfjs-dist": "^6.3.289",
+    "tesseract.js": "^7.0.0",
     "vue": "latest",
-    "vue-chartjs": "^5.3.4"
+    "vue-chartjs": "^5.3.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@nuxtjs/color-mode": "^3.5.2",

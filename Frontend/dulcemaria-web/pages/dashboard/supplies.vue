@@ -180,7 +180,16 @@
             No tenés permisos para registrar gastos. Consultá a un administrador.
           </div>
           <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 mb-4">
-            <h3 class="text-lg font-semibold text-warm-800 mb-4">Registrar Gasto</h3>
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-warm-800">Registrar Gasto</h3>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-warm-100 hover:bg-warm-200 text-warm-700 text-sm font-medium rounded-lg transition-colors"
+                @click="showImportModal = true"
+              >
+                📥 Importar boleta/factura
+              </button>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input v-model="newExpense.description" type="text" placeholder="Descripción / N° boleta *" class="input sm:col-span-2">
               <input v-model="newExpense.expense_date" type="date" class="input">
@@ -459,11 +468,11 @@
       </div>
     </Modal>
 
-    <!-- Expense Item Modal -->
-    <Modal
+    <!-- Expense Item Panel -->
+    <SidePanel
       v-model="showExpenseItemModal"
       :title="editingExpenseItemIndex === null ? 'Agregar Producto al Detalle' : 'Editar Producto'"
-      submit-text="Aceptar"
+      :submit-text="noContentAcknowledged ? (editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así') : 'Aceptar'"
       @submit="confirmExpenseItemModal"
     >
       <div class="space-y-4">
@@ -543,39 +552,90 @@
 
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label class="label">Cantidad *</label>
+            <label class="label">Cantidad comprada *</label>
             <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
           </div>
           <div>
-            <label class="label">Unidad *</label>
+            <label class="label flex items-center gap-1">
+              Unidad de compra *
+              <span
+                class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+                title="Elegí la unidad directa (Gramos, Kilogramos, Mililitros, Litros) si compraste a granel. Elegí 'Unidad' si compraste por paquete, saco o bandeja cerrada — ej. un paquete de canela o un saco de harina — para después indicar cuánto pesa o mide cada uno."
+              >ⓘ</span>
+            </label>
             <select v-model="draftExpenseItem.unit" class="input">
               <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
             </select>
           </div>
           <div>
-            <label class="label">Precio por unidad (CLP, c/IVA) *</label>
+            <label class="label">Precio por unidad de compra (CLP, c/IVA) *</label>
             <input v-model.number="draftExpenseItem.unit_price_clp" type="number" min="0" class="input">
           </div>
         </div>
-        <p class="text-xs text-warm-500">Ej: si compraste 10 kg, poné cantidad 10 y unidad Kilogramos — el sistema convierte solo a la unidad del insumo.</p>
 
-        <div class="flex justify-between items-center pt-3 border-t border-warm-100 text-sm">
-          <span class="text-warm-500">Total línea:</span>
-          <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+        <!-- Contenido neto — solo cuando se compra por unidad discreta (paquete, saco,
+             bandeja...), para poder distinguir "2 paquetes de 250g" de "2 gramos". -->
+        <div v-if="draftExpenseItem.unit === 'unidad'" class="p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
+          <label class="label flex items-center gap-1">
+            Contenido neto por unidad comprada (opcional)
+            <span
+              class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+              title="Cuánto pesa o mide CADA unidad comprada — ej. 250 / Gramos para un paquete de canela de 250 g, o 25 / Kilogramos para un saco de harina de 25 kg. Si lo dejás vacío, el sistema asume que 1 unidad comprada = 1 unidad de stock (correcto para insumos que se cuentan de a uno, como huevos)."
+            >ⓘ</span>
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <input v-model.number="draftExpenseItem.content_qty" type="number" min="0.001" step="0.001" class="input" placeholder="Ej: 250">
+            <select v-model="draftExpenseItem.content_unit" class="input">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
+          </div>
+          <p class="text-xs text-warm-500">Ej: si cada paquete pesa 250 g, poné 250 / Gramos. Si lo dejás vacío, cada unidad comprada suma 1 al stock del insumo.</p>
+
+          <!-- Gate de confirmación: se arma en confirmExpenseItemModal() cuando se
+               intenta guardar sin contenido neto para un insumo que no se cuenta de
+               a uno — obliga a un segundo click para evitar repetir el bug original
+               (paquete de 250g contado por descuido como 1 unidad de stock). -->
+          <div v-if="noContentAcknowledged" class="mt-2 p-2.5 bg-warning-50 border border-warning-100 rounded-lg text-xs text-warning-700 space-y-1">
+            <p>
+              No especificaste el contenido neto de <strong>"{{ draftExpenseItem.product_name }}"</strong> —
+              se va a sumar 1 unidad exacta al stock.
+            </p>
+            <p>¿Es correcto? Hacé clic de nuevo en "{{ editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así' }}" para confirmar, o completá el contenido neto arriba si no lo es.</p>
+          </div>
+        </div>
+
+        <p class="text-xs text-warm-500">Ej: si compraste 10 kg sueltos, poné cantidad 10 y unidad Kilogramos.</p>
+
+        <div class="pt-3 border-t border-warm-100 space-y-1.5">
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-warm-500">Total línea:</span>
+            <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-warm-500">Suma a inventario:</span>
+            <span class="font-bold text-primary-700">{{ itemStockPreview(draftExpenseItem) }}</span>
+          </div>
         </div>
       </div>
-    </Modal>
+    </SidePanel>
 
     <NoticeDialog
       v-model="showNotice"
       :variant="noticeVariant"
       :message="noticeMessage"
     />
+
+    <ExpenseImportModal
+      v-model="showImportModal"
+      @parsed="startImportQueue"
+    />
     </div>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
+import { norm, type QuoteLineItem } from '~/lib/quote-grid'
+
 const api = useApi()
 
 definePageMeta({ 
@@ -657,6 +717,16 @@ const isPriceStale = (iso: string) => {
   return diff > 30
 }
 
+// El backend manda `error` como string o, en fallos de validación zod, como
+// `{ formErrors, fieldErrors }` (parsed.error.flatten()) — sin esto, ese objeto
+// se interpola directo en el template y se ve literal "[object Object]".
+const errorMessage = (err: any, fallback: string): string => {
+  if (!err) return fallback
+  if (typeof err === 'string') return err
+  const firstFieldError = err.fieldErrors && (Object.values(err.fieldErrors)[0] as string[] | undefined)?.[0]
+  return firstFieldError || err.formErrors?.[0] || fallback
+}
+
 let searchTimer: any = null
 const debouncedSearch = () => {
   clearTimeout(searchTimer)
@@ -671,7 +741,7 @@ const loadSupplies = async () => {
     const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/supplies${q}`)
     if (res.ok) supplies.value = res.items
   } catch (e: any) {
-    suppliesError.value = e?.data?.error || 'Error al cargar insumos'
+    suppliesError.value = errorMessage(e?.data?.error, 'Error al cargar insumos')
   } finally {
     suppliesLoading.value = false
   }
@@ -729,7 +799,7 @@ const saveSupply = async () => {
     noticeMessage.value = wasEditing ? 'Insumo actualizado correctamente.' : 'Insumo creado correctamente.'
     showNotice.value = true
   } catch (e: any) {
-    supplyFormError.value = e?.data?.error || 'Error al guardar'
+    supplyFormError.value = errorMessage(e?.data?.error, 'Error al guardar')
   } finally {
     supplySaving.value = false
   }
@@ -746,6 +816,10 @@ interface ExpenseItem {
   unit: string
   unit_price_clp: number
   total_clp: number
+  // Compra por unidad discreta (paquete/saco) con contenido neto conocido — ver
+  // comentario de columna en Backend/dulcemaria-api/src/migrations/complete.js.
+  content_qty: number | null
+  content_unit: string | null
 }
 
 interface DraftExpenseItem {
@@ -754,6 +828,8 @@ interface DraftExpenseItem {
   quantity: number | null
   unit: string
   unit_price_clp: number | null
+  content_qty: number | null
+  content_unit: string
   _supplySearch: string
   _searchResults: any[]
   _searchSeq: number
@@ -769,6 +845,8 @@ const createEmptyExpenseItem = (): DraftExpenseItem => ({
   quantity: 1,
   unit: 'unidad',
   unit_price_clp: null,
+  content_qty: null,
+  content_unit: 'g',
   _supplySearch: '',
   _searchResults: [],
   _searchSeq: 0,
@@ -777,6 +855,41 @@ const createEmptyExpenseItem = (): DraftExpenseItem => ({
   _createUnit: 'unidad',
   _creatingSupply: false,
 })
+
+// Espejo liviano de Backend/dulcemaria-api/src/lib/units.js — solo para la vista
+// previa en vivo del detalle de gasto; el backend es la fuente de verdad al guardar.
+const UNIT_TO_BASE: Record<string, { dim: string; toBase: number }> = {
+  g: { dim: 'weight', toBase: 1 },
+  kg: { dim: 'weight', toBase: 1000 },
+  ml: { dim: 'volume', toBase: 1 },
+  l: { dim: 'volume', toBase: 1000 },
+  unidad: { dim: 'count', toBase: 1 },
+}
+const previewConvert = (value: number, from: string, to: string): number | null => {
+  if (from === to) return value
+  const f = UNIT_TO_BASE[from]
+  const t = UNIT_TO_BASE[to]
+  if (!f || !t || f.dim !== t.dim) return null
+  return (value * f.toBase) / t.toBase
+}
+
+// Cuánto suma realmente al stock del insumo este ítem del detalle — muestra el
+// efecto real ANTES de guardar, para no tener que hacer la cuenta de cabeza.
+const itemStockPreview = (item: DraftExpenseItem): string => {
+  if (!item.supply_id || !item.quantity) return '—'
+  const supply = allSupplies.value.find((s) => s.id === item.supply_id)
+  const supplyUnit = supply?.unit || item.unit
+  let amount: number | null
+  if (item.unit === 'unidad' && item.content_qty && item.content_unit) {
+    const content = previewConvert(item.content_qty, item.content_unit, supplyUnit)
+    amount = content == null ? null : item.quantity * content
+  } else {
+    amount = previewConvert(item.quantity, item.unit, supplyUnit)
+  }
+  if (amount == null) return 'Unidad incompatible con el insumo'
+  const label = UNIT_OPTIONS.find((u) => u.value === supplyUnit)?.label || supplyUnit
+  return `${formatPrice(amount)} ${label}`
+}
 
 const expenses = ref<any[]>([])
 const expensesTotal = ref(0)
@@ -800,6 +913,165 @@ const showExpenseItemModal = ref(false)
 const editingExpenseItemIndex = ref<number | null>(null)
 const draftExpenseItem = ref<DraftExpenseItem>(createEmptyExpenseItem())
 const expenseItemModalError = ref('')
+
+// Gate de confirmación para "Unidad de compra = Unidad" sin contenido neto (ver
+// confirmExpenseItemModal). Se re-arma en falso apenas cambia cualquier campo
+// relevante, para no dejar una confirmación vieja "colgada" tras editar algo.
+const noContentAcknowledged = ref(false)
+watch(
+  () => [
+    draftExpenseItem.value.unit,
+    draftExpenseItem.value.content_qty,
+    draftExpenseItem.value.content_unit,
+    draftExpenseItem.value.supply_id,
+  ],
+  () => { noContentAcknowledged.value = false }
+)
+
+// ── Importación de boleta/factura (foto/PDF/Excel) — ver components/ExpenseImportModal.vue ──
+// Cada línea detectada pasa, una a la vez, por el MISMO panel "Agregar Producto
+// al Detalle" de arriba (con su buscador de insumo y su gate de contenido neto)
+// en vez de un guardado masivo automático — la supervisión queda del lado del
+// usuario, el motor solo prellena un borrador.
+const showImportModal = ref(false)
+const importQueue = ref<QuoteLineItem[]>([])
+const importQueueIndex = ref(0)
+const importQueueStartCount = ref(0)
+const importMode = ref(false)
+// true solo entre "se confirmó este ítem" y "el watch de abajo ya lo procesó" —
+// distingue un cierre por confirmación (ya manejado en confirmExpenseItemModal)
+// de un cierre por cancelar/backdrop/Esc (que el watch trata como "saltar ítem").
+const importJustConfirmed = ref(false)
+
+// Distancia de Levenshtein clásica (DP) — desempate del fuzzy-match cuando el
+// solapamiento de tokens no alcanza para decidir (ej. ruido de OCR: "AZUKAR" vs "AZUCAR").
+const levenshteinDistance = (a: string, b: string): number => {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+// Puntaje de similitud 0-1 entre la descripción de la boleta y el nombre de un
+// insumo del catálogo: solapamiento de tokens normalizados (tipo Jaccard) +
+// distancia de Levenshtein normalizada como desempate, más un bonus si uno es
+// substring del otro. Sin librerías nuevas — reusa `norm()` de lib/quote-grid.ts.
+const supplyMatchScore = (descripcion: string, supplyName: string): number => {
+  const a = norm(descripcion)
+  const b = norm(supplyName)
+  if (!a || !b) return 0
+  if (a === b) return 1
+  const tokensA = new Set(a.split(' ').filter(Boolean))
+  const tokensB = new Set(b.split(' ').filter(Boolean))
+  const shared = [...tokensA].filter((t) => tokensB.has(t)).length
+  const jaccard = shared / Math.max(1, Math.max(tokensA.size, tokensB.size))
+  const maxLen = Math.max(a.length, b.length)
+  const levSim = maxLen ? 1 - levenshteinDistance(a, b) / maxLen : 0
+  const substringBonus = a.includes(b) || b.includes(a) ? 0.15 : 0
+  return Math.min(1, jaccard * 0.6 + levSim * 0.4 + substringBonus)
+}
+
+const SUPPLY_MATCH_THRESHOLD = 0.75
+// Mejor candidato del catálogo para una descripción OCR, o null si ninguno supera
+// el umbral — en ese caso se deja la búsqueda precargada con el texto crudo en
+// vez de adivinar, reusando el flujo de búsqueda/creación inline que ya existe.
+const findBestSupplyMatch = (descripcion: string): any => {
+  let best: any = null
+  let bestScore = 0
+  for (const s of allSupplies.value) {
+    const score = supplyMatchScore(descripcion, s.name)
+    if (score > bestScore) {
+      bestScore = score
+      best = s
+    }
+  }
+  return bestScore >= SUPPLY_MATCH_THRESHOLD ? best : null
+}
+
+// Abre el panel existente prellenado con la línea `index` de la cola de importación.
+const openImportedItem = (index: number) => {
+  const line = importQueue.value[index]
+  if (!line) return
+  importQueueIndex.value = index
+  importMode.value = true
+  importJustConfirmed.value = false
+  editingExpenseItemIndex.value = null
+  draftExpenseItem.value = createEmptyExpenseItem()
+  expenseItemModalError.value = ''
+
+  const match = findBestSupplyMatch(line.descripcion)
+  if (match) {
+    selectSupplyForItem(draftExpenseItem.value, match)
+  } else {
+    draftExpenseItem.value._supplySearch = line.descripcion
+  }
+  // El OCR nunca puede saber si la compra viene suelta (g/kg/ml/l) o por unidad
+  // discreta (paquete/saco) — arranca siempre en 'unidad' para forzar el gate de
+  // contenido neto existente, la misma red de seguridad del fix original.
+  draftExpenseItem.value.unit = 'unidad'
+  draftExpenseItem.value.quantity = line.cantidad && line.cantidad > 0 ? line.cantidad : 1
+  if (line.valorUnitario != null) {
+    draftExpenseItem.value.unit_price_clp = Math.round(line.valorUnitario)
+  } else if (line.total != null && line.cantidad) {
+    draftExpenseItem.value.unit_price_clp = Math.round(line.total / line.cantidad)
+  } else {
+    draftExpenseItem.value.unit_price_clp = null
+  }
+  showExpenseItemModal.value = true
+}
+
+const finishImportQueue = () => {
+  const added = newExpense.value.items.length - importQueueStartCount.value
+  const total = importQueue.value.length
+  importMode.value = false
+  importQueue.value = []
+  importQueueIndex.value = 0
+  noticeVariant.value = 'success'
+  noticeMessage.value = `Se agregaron ${added} de ${total} ítems detectados.`
+  showNotice.value = true
+}
+
+const advanceImportQueue = () => {
+  const nextIndex = importQueueIndex.value + 1
+  if (nextIndex < importQueue.value.length) {
+    openImportedItem(nextIndex)
+  } else {
+    finishImportQueue()
+  }
+}
+
+// Punto de entrada llamado por ExpenseImportModal cuando el usuario confirma
+// qué ítems detectados cargar (evento `parsed`).
+const startImportQueue = (lines: QuoteLineItem[]) => {
+  if (!lines.length) return
+  importQueue.value = lines
+  importQueueStartCount.value = newExpense.value.items.length
+  openImportedItem(0)
+}
+
+// Si el panel se cierra SIN pasar por confirmExpenseItemModal (Cancelar, click
+// en el backdrop, Esc) durante una importación en curso, se trata como "saltar
+// este ítem" — si no, un solo click accidental fuera del panel perdería el
+// resto de la cola en silencio.
+watch(showExpenseItemModal, (isOpen) => {
+  if (isOpen || !importMode.value) return
+  if (importJustConfirmed.value) {
+    importJustConfirmed.value = false
+    return
+  }
+  advanceImportQueue()
+})
 
 // ── Proveedores (buscador + creación/eliminación inline en el form de gasto) ──
 const providerSearch = ref('')
@@ -854,7 +1126,7 @@ const createProvider = async () => {
     const res = await api.post<{ ok: boolean; provider: any }>('/admin/providers', { name })
     if (res.ok) selectProvider(res.provider)
   } catch (e: any) {
-    providerError.value = e?.data?.error || 'Error al crear proveedor'
+    providerError.value = errorMessage(e?.data?.error, 'Error al crear proveedor')
   } finally {
     creatingProvider.value = false
   }
@@ -869,7 +1141,7 @@ const deleteProvider = async (p: any) => {
     providerResults.value = providerResults.value.filter((x) => x.id !== p.id)
     if (newExpense.value.provider_id === p.id) clearProviderSelection()
   } catch (e: any) {
-    providerError.value = e?.data?.error || 'Error al eliminar proveedor'
+    providerError.value = errorMessage(e?.data?.error, 'Error al eliminar proveedor')
   } finally {
     deletingProviderId.value = null
   }
@@ -931,8 +1203,9 @@ const selectSupplyForItem = (item: DraftExpenseItem, supply: any) => {
   item._showSupplyDropdown = false
   item._showCreateSupply = false
   item._createUnit = 'unidad'
-  if (supply.last_price_clp && !item.unit_price_clp) {
-    item.unit_price_clp = supply.last_price_clp
+  const referenceUnitPrice = unitPriceFor(supply)
+  if (referenceUnitPrice && !item.unit_price_clp) {
+    item.unit_price_clp = Math.round(referenceUnitPrice)
   }
 }
 
@@ -954,13 +1227,14 @@ const createSupplyForItem = async (item: DraftExpenseItem) => {
     })
     if (res.ok) selectSupplyForItem(item, res.supply)
   } catch (e: any) {
-    expenseItemModalError.value = e?.data?.error || 'Error al crear insumo'
+    expenseItemModalError.value = errorMessage(e?.data?.error, 'Error al crear insumo')
   } finally {
     item._creatingSupply = false
   }
 }
 
 const openAddExpenseItemModal = () => {
+  importMode.value = false
   editingExpenseItemIndex.value = null
   draftExpenseItem.value = createEmptyExpenseItem()
   expenseItemModalError.value = ''
@@ -968,6 +1242,7 @@ const openAddExpenseItemModal = () => {
 }
 
 const openEditExpenseItemModal = (index: number) => {
+  importMode.value = false
   editingExpenseItemIndex.value = index
   const original = newExpense.value.items[index]
   draftExpenseItem.value = {
@@ -977,6 +1252,8 @@ const openEditExpenseItemModal = (index: number) => {
     quantity: original.quantity,
     unit: original.unit || 'unidad',
     unit_price_clp: original.unit_price_clp,
+    content_qty: original.content_qty ?? null,
+    content_unit: original.content_unit || 'g',
   }
   expenseItemModalError.value = ''
   showExpenseItemModal.value = true
@@ -1000,9 +1277,24 @@ const confirmExpenseItemModal = () => {
     expenseItemModalError.value = 'El precio unitario es requerido'
     return
   }
+
+  // Compra por unidad discreta sin contenido neto: puede ser intencional (insumos
+  // que se cuentan de a uno, ej. huevos) o un descuido — el bug original que este
+  // campo vino a corregir. Si el insumo no se cuenta de a uno, se exige un click
+  // extra de confirmación antes de guardar (ver banner "noContentAcknowledged").
+  const selectedSupply = allSupplies.value.find((s) => s.id === d.supply_id)
+  const needsNoContentAck = d.unit === 'unidad' && !d.content_qty && selectedSupply?.unit !== 'unidad'
+  if (needsNoContentAck && !noContentAcknowledged.value) {
+    expenseItemModalError.value = ''
+    noContentAcknowledged.value = true
+    return
+  }
+  noContentAcknowledged.value = false
+
   const existingKey = editingExpenseItemIndex.value !== null
     ? newExpense.value.items[editingExpenseItemIndex.value]._key
     : crypto.randomUUID()
+  const hasContent = d.unit === 'unidad' && !!d.content_qty && !!d.content_unit
   const item: ExpenseItem = {
     _key: existingKey,
     supply_id: d.supply_id,
@@ -1011,13 +1303,24 @@ const confirmExpenseItemModal = () => {
     unit: d.unit,
     unit_price_clp: d.unit_price_clp,
     total_clp: Math.round(d.quantity * d.unit_price_clp),
+    content_qty: hasContent ? d.content_qty : null,
+    content_unit: hasContent ? d.content_unit : null,
   }
   if (editingExpenseItemIndex.value !== null) {
     newExpense.value.items[editingExpenseItemIndex.value] = item
   } else {
     newExpense.value.items.push(item)
   }
-  showExpenseItemModal.value = false
+
+  if (importMode.value) {
+    // Marcado ANTES de cerrar para que el watch de arriba no lo vuelva a
+    // procesar como "cancelado" — acá ya se confirmó y guardó de verdad.
+    importJustConfirmed.value = true
+    showExpenseItemModal.value = false
+    advanceImportQueue()
+  } else {
+    showExpenseItemModal.value = false
+  }
 }
 
 const addExpense = async () => {
@@ -1052,7 +1355,7 @@ const addExpense = async () => {
     await loadSupplies()
     await loadAllSupplies()
   } catch (e: any) {
-    expenseError.value = e?.data?.error || 'Error al registrar gasto'
+    expenseError.value = errorMessage(e?.data?.error, 'Error al registrar gasto')
   } finally {
     expenseSaving.value = false
   }
@@ -1065,7 +1368,7 @@ const deleteExpense = async (id: string) => {
     await loadExpenses()
   } catch (e: any) {
     noticeVariant.value = 'error'
-    noticeMessage.value = e?.data?.error || 'Error al eliminar'
+    noticeMessage.value = errorMessage(e?.data?.error, 'Error al eliminar')
     showNotice.value = true
   }
 }

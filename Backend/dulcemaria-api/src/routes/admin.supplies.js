@@ -160,6 +160,10 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
     unit: z.enum(VALID_UNITS),
     unit_price_clp: z.number().int().nonnegative(),
     total_clp: z.number().int().nonnegative(),
+    // Compra por unidad discreta (paquete/saco) cuyo contenido neto se conoce —
+    // ver comentario de columna en migrations/complete.js.
+    content_qty: z.number().positive().optional().nullable(),
+    content_unit: z.enum(VALID_UNITS).optional().nullable(),
   });
   const schema = z.object({
     description: z.string().min(1).max(300),
@@ -218,15 +222,28 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
         // La compra puede venir en una unidad distinta a la del insumo (ej:
         // comprás "10 kg" de algo cuyo stock se lleva en gramos) — se convierte
         // antes de sumar, para no pisar stock de forma silenciosa como pasaba antes.
+        //
+        // Caso aparte: compra por unidad discreta (paquete/saco) con contenido neto
+        // conocido (content_qty/content_unit) — ej. 2 paquetes de 250g c/u. Acá
+        // `quantity` cuenta paquetes, no el insumo en sí, así que el stock/precio de
+        // referencia se calculan contra el contenido neto, no contra `quantity` directo.
         let stockIncrement;
         let referencePriceClp;
+        const hasContent = item.content_qty != null && item.content_unit != null;
         try {
-          stockIncrement = convertQuantity(item.quantity, item.unit, supply.unit);
-          // Precio por la misma cantidad de referencia que ya tiene el insumo
-          // (ej: si reference_qty=1000g y compraste a $850/kg, el nuevo "precio
-          // por 1000g" sigue siendo 850, no se pisa por un cambio de unidad).
-          const refQtyInItemUnit = convertQuantity(Number(supply.reference_qty), supply.unit, item.unit);
-          referencePriceClp = Math.round(item.unit_price_clp * refQtyInItemUnit);
+          if (hasContent) {
+            const contentInSupplyUnit = convertQuantity(item.content_qty, item.content_unit, supply.unit);
+            stockIncrement = item.quantity * contentInSupplyUnit;
+            const pricePerSupplyUnit = item.unit_price_clp / contentInSupplyUnit;
+            referencePriceClp = Math.round(pricePerSupplyUnit * Number(supply.reference_qty));
+          } else {
+            stockIncrement = convertQuantity(item.quantity, item.unit, supply.unit);
+            // Precio por la misma cantidad de referencia que ya tiene el insumo
+            // (ej: si reference_qty=1000g y compraste a $850/kg, el nuevo "precio
+            // por 1000g" sigue siendo 850, no se pisa por un cambio de unidad).
+            const refQtyInItemUnit = convertQuantity(Number(supply.reference_qty), supply.unit, item.unit);
+            referencePriceClp = Math.round(item.unit_price_clp * refQtyInItemUnit);
+          }
         } catch (convErr) {
           const err = new Error(`No se pudo registrar "${item.product_name}": ${convErr.message}`);
           err.statusCode = 400;
@@ -234,9 +251,9 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
         }
 
         await client.query(
-          `INSERT INTO expense_record_items (id, expense_record_id, supply_id, product_name_snapshot, quantity, unit, unit_price_clp, total_clp)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [crypto.randomUUID(), id, item.supply_id, item.product_name, item.quantity, item.unit, item.unit_price_clp, item.total_clp]
+          `INSERT INTO expense_record_items (id, expense_record_id, supply_id, product_name_snapshot, quantity, unit, unit_price_clp, total_clp, content_qty, content_unit)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [crypto.randomUUID(), id, item.supply_id, item.product_name, item.quantity, item.unit, item.unit_price_clp, item.total_clp, item.content_qty ?? null, item.content_unit ?? null]
         );
         // Solo actualiza el "último precio" si esta boleta es igual o más reciente que
         // el último precio ya registrado, para que un gasto retroactivo no pise un precio más nuevo.
@@ -288,7 +305,7 @@ router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidP
     // de compra — en ese caso se asume que ya estaba en la unidad del insumo
     // (comportamiento anterior), igual que hacía el código viejo.
     const itemsRes = await client.query(
-      `SELECT ei.supply_id, ei.quantity, ei.unit, s.unit AS supply_unit
+      `SELECT ei.supply_id, ei.quantity, ei.unit, ei.content_qty, ei.content_unit, s.unit AS supply_unit
        FROM expense_record_items ei
        JOIN supplies s ON s.id = ei.supply_id
        WHERE ei.expense_record_id=$1
@@ -297,7 +314,17 @@ router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidP
     );
     for (const item of itemsRes.rows) {
       let revertAmount = Number(item.quantity);
-      if (item.unit) {
+      if (item.content_qty != null && item.content_unit) {
+        // Se compró por unidad discreta con contenido neto conocido (ver POST /expenses) —
+        // revertir contra ese contenido, no contra `quantity` (que cuenta paquetes, no insumo).
+        try {
+          const contentInSupplyUnit = convertQuantity(Number(item.content_qty), item.content_unit, item.supply_unit);
+          revertAmount = Number(item.quantity) * contentInSupplyUnit;
+        } catch {
+          // Unidad de contenido incompatible con la actual del insumo (cambió después de
+          // la compra) — revertir la cantidad original igual es mejor que no revertir nada.
+        }
+      } else if (item.unit) {
         try {
           revertAmount = convertQuantity(Number(item.quantity), item.unit, item.supply_unit);
         } catch {
@@ -306,6 +333,17 @@ router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidP
         }
       }
       await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1 WHERE id=$2`, [revertAmount, item.supply_id]);
+
+      // Si este gasto sigue siendo el que dejó el "último precio" del insumo (nadie
+      // lo pisó después), lo limpiamos en vez de dejar un precio fantasma tras
+      // borrar el gasto que lo generó. Comparación a nivel de día porque el POST
+      // guarda last_updated con esa misma granularidad (expense_date::timestamptz).
+      await client.query(
+        `UPDATE supplies s SET last_price_clp = NULL, last_updated = NULL
+         FROM expense_records er
+         WHERE s.id = $1 AND er.id = $2 AND s.last_updated::date = er.expense_date`,
+        [item.supply_id, req.params.id]
+      );
     }
 
     const r = await client.query("DELETE FROM expense_records WHERE id=$1 RETURNING id", [req.params.id]);

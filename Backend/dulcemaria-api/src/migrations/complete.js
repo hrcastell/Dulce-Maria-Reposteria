@@ -322,6 +322,13 @@ async function runCompleteMigrations() {
     // gramos). Se convierte con convertQuantity antes de sumar/revertir stock.
     // Nullable: registros históricos de antes de este campo no lo tienen.
     `ALTER TABLE expense_record_items ADD COLUMN IF NOT EXISTS unit VARCHAR(20);`,
+    // content_qty/content_unit — cuando la compra es por unidad discreta (paquete,
+    // saco, bandeja...), cuánto del insumo (en SU unidad base) contiene CADA unidad
+    // comprada (ej: paquete de 250g). Sin esto, "2 paquetes de 250g" no se puede
+    // distinguir de "2 gramos" y el stock/costo quedan mal por el factor de empaque.
+    // Nullable: null = comportamiento previo (compra directa en la unidad del insumo).
+    `ALTER TABLE expense_record_items ADD COLUMN IF NOT EXISTS content_qty NUMERIC(12,3);`,
+    `ALTER TABLE expense_record_items ADD COLUMN IF NOT EXISTS content_unit VARCHAR(20);`,
 
     // ============================================
     // Tabla: kitchen_equipment (hornos, etc. — consumo de gas/electricidad)
