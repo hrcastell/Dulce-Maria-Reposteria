@@ -1,10 +1,5 @@
 <template>
   <div class="space-y-6">
-    <div v-if="error" class="rounded-xl bg-error-50 p-4 border border-error-100 flex items-start gap-3">
-      <span class="text-error-500 mt-0.5">⚠️</span>
-      <p class="text-sm text-error-700">{{ error }}</p>
-    </div>
-
     <!-- Customer Selection -->
     <div class="bg-white p-5 rounded-2xl border border-warm-100 shadow-sm">
       <label class="block text-sm font-semibold text-warm-700 mb-2">Cliente *</label>
@@ -311,7 +306,8 @@
     </Modal>
 
     <!-- NoticeDialog local a este componente — feedback del flujo "+ Nuevo"
-         cliente, no accede al NoticeDialog de orders.vue -->
+         cliente y errores de validación del formulario. No es el NoticeDialog
+         de orders.vue (ese solo cubre la respuesta del submit al padre). -->
     <NoticeDialog
       v-model="showNotice"
       :variant="noticeVariant"
@@ -418,8 +414,17 @@ const customers = ref<Customer[]>([])
 const products = ref<Product[]>([])
 const loadingCustomers = ref(false)
 const loadingProducts = ref(false)
-const error = ref('')
 const enableOverride = ref(false)
+
+// Modo edición: props.order viene seteado cuando orders.vue abre el side
+// panel para editar (ver populateFormFromOrder). En este modo el chequeo de
+// stock del cliente NO aplica: stock_qty en `products`/`_variants` ya viene
+// descontado por esta misma orden, y el backend (PUT /:id) restituye ese
+// stock antes de re-reservar, así que comparar acá contra el valor ya
+// descontado da falsos positivos. El backend queda como única autoridad para
+// validar stock al editar, y su error llega por handleSubmitEditOrder al
+// NoticeDialog del padre (ya es un modal).
+const isEditMode = computed(() => !!props.order)
 
 const showNewCustomerModal = ref(false)
 const creatingCustomer = ref(false)
@@ -646,52 +651,52 @@ const handleCreateCustomer = async (data: any) => {
   }
 }
 
+const fail = (message: string) => {
+  noticeVariant.value = 'error'
+  noticeMessage.value = message
+  showNotice.value = true
+  return false
+}
+
 const validate = () => {
   if (!form.value.customerId) {
-    error.value = 'Debe seleccionar un cliente'
-    return false
+    return fail('Debe seleccionar un cliente')
   }
-  
+
   if (form.value.items.length === 0) {
-    error.value = 'Debe agregar al menos un producto'
-    return false
+    return fail('Debe agregar al menos un producto')
   }
-  
+
   for (const item of form.value.items) {
     if (!item.productId) {
-      error.value = 'Todos los productos deben estar seleccionados'
-      return false
+      return fail('Todos los productos deben estar seleccionados')
     }
-    
-    // Check stock if variant selected
+
+    // Chequeo de stock: solo tiene sentido al CREAR. Al editar, stock_qty ya
+    // viene descontado por esta misma orden — ver isEditMode más arriba.
     if (item.variantId && item._variants) {
-        const v = item._variants.find(x => x.id === item.variantId)
-        if (v && item.qty > v.stock_qty) {
-            error.value = `Stock insuficiente para la variante seleccionada (${v.name}). Disponible: ${v.stock_qty}`
-            return false
+        if (!isEditMode.value) {
+            const v = item._variants.find(x => x.id === item.variantId)
+            if (v && item.qty > v.stock_qty) {
+                return fail(`Stock insuficiente para la variante seleccionada (${v.name}). Disponible: ${v.stock_qty}`)
+            }
         }
     } else {
-        // Check base product stock if no variants exist (or mandatory?)
-        // If product has variants, stock is usually 0 on parent unless sync trigger worked.
-        // But logic says: if variants exist, user MUST select one?
-        // Let's enforce variant selection if variants exist.
+        // Si el producto tiene variantes, el usuario debe elegir una —
+        // chequeo de integridad, no de stock, así que aplica siempre.
         if (item._variants && item._variants.length > 0 && !item.variantId) {
-            error.value = `Debe seleccionar una variante para el producto`
-            return false
+            return fail('Debe seleccionar una variante para el producto')
         }
-        
-        // If simple product
-        if ((!item._variants || item._variants.length === 0)) {
+
+        if ((!item._variants || item._variants.length === 0) && !isEditMode.value) {
              const p = products.value.find(x => x.id === item.productId)
              if (p && item.qty > p.stock_qty) {
-                 error.value = `Stock insuficiente para ${p.name}. Disponible: ${p.stock_qty}`
-                 return false
+                 return fail(`Stock insuficiente para ${p.name}. Disponible: ${p.stock_qty}`)
              }
         }
     }
   }
-  
-  error.value = ''
+
   return true
 }
 
