@@ -161,57 +161,12 @@
                     type="button"
                     class="p-2 text-warm-500 hover:text-warm-800 hover:bg-warm-100 rounded-lg transition-colors"
                     aria-label="Acciones"
-                    @click="toggleActionsMenu(order.id)"
+                    @click="toggleActionsMenu(order.id, $event)"
                   >
                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
                     </svg>
                   </button>
-
-                  <div
-                    v-if="openMenuId === order.id"
-                    class="absolute right-0 z-20 mt-1 w-48 bg-white border border-warm-200 rounded-xl shadow-lg py-1"
-                  >
-                    <button
-                      type="button"
-                      class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors"
-                      @click="openMenuId = null; openDetailModal(order)"
-                    >
-                      <span>👁️</span> Ver
-                    </button>
-                    <button
-                      v-if="canEdit && order.status !== 'CANCELLED'"
-                      type="button"
-                      class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      :disabled="loadingEditDetail"
-                      @click="openMenuId = null; openEditModal(order)"
-                    >
-                      <span>✏️</span> {{ loadingEditDetail ? 'Cargando...' : 'Editar' }}
-                    </button>
-                    <button
-                      type="button"
-                      class="w-full flex items-center gap-2 px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 transition-colors"
-                      @click="openMenuId = null; openStatusModal(order)"
-                    >
-                      <span>🔄</span> Estado
-                    </button>
-                    <button
-                      type="button"
-                      class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      :disabled="printingOrderId === order.id"
-                      @click="openMenuId = null; printOrder(order)"
-                    >
-                      <span>🖨️</span> {{ printingOrderId === order.id ? 'Generando...' : 'Imprimir' }}
-                    </button>
-                    <button
-                      v-if="order.status !== 'CANCELLED' && order.status !== 'DELIVERED'"
-                      type="button"
-                      class="w-full flex items-center gap-2 px-4 py-2 text-sm text-error-600 hover:bg-error-50 transition-colors"
-                      @click="openMenuId = null; openCancelDialog(order)"
-                    >
-                      <span>🗑️</span> Cancelar
-                    </button>
-                  </div>
                 </div>
               </td>
             </tr>
@@ -246,61 +201,68 @@
               type="button"
               class="p-2 text-warm-500 hover:text-warm-800 hover:bg-warm-100 rounded-lg transition-colors"
               aria-label="Acciones"
-              @click="toggleActionsMenu(order.id)"
+              @click="toggleActionsMenu(order.id, $event)"
             >
               <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
               </svg>
             </button>
-
-            <div
-              v-if="openMenuId === order.id"
-              class="absolute right-0 top-full z-20 mt-1 w-48 bg-white border border-warm-200 rounded-xl shadow-lg py-1"
-            >
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors"
-                @click="openMenuId = null; openDetailModal(order)"
-              >
-                <span>👁️</span> Ver
-              </button>
-              <button
-                v-if="canEdit && order.status !== 'CANCELLED'"
-                type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loadingEditDetail"
-                @click="openMenuId = null; openEditModal(order)"
-              >
-                <span>✏️</span> {{ loadingEditDetail ? 'Cargando...' : 'Editar' }}
-              </button>
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 transition-colors"
-                @click="openMenuId = null; openStatusModal(order)"
-              >
-                <span>🔄</span> Estado
-              </button>
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="printingOrderId === order.id"
-                @click="openMenuId = null; printOrder(order)"
-              >
-                <span>🖨️</span> {{ printingOrderId === order.id ? 'Generando...' : 'Imprimir' }}
-              </button>
-              <button
-                v-if="order.status !== 'CANCELLED' && order.status !== 'DELIVERED'"
-                type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-error-600 hover:bg-error-50 transition-colors"
-                @click="openMenuId = null; openCancelDialog(order)"
-              >
-                <span>🗑️</span> Cancelar
-              </button>
-            </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Menú de acciones (Ver / Editar / Estado / Imprimir / Cancelar) —
+         único para desktop y mobile, teleportado a body y posicionado
+         `fixed` desde el botón que lo abrió (ver toggleActionsMenu). -->
+    <Teleport to="body">
+      <div
+        v-if="openMenuOrder"
+        class="fixed z-40 w-48 bg-white border border-warm-200 rounded-xl shadow-lg py-1"
+        :style="{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors"
+          @click="openDetailModal(openMenuOrder); openMenuId = null"
+        >
+          <span>👁️</span> Ver
+        </button>
+        <button
+          v-if="canEdit && openMenuOrder.status !== 'CANCELLED'"
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="loadingEditDetail"
+          @click="openEditModal(openMenuOrder); openMenuId = null"
+        >
+          <span>✏️</span> {{ loadingEditDetail ? 'Cargando...' : 'Editar' }}
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 transition-colors"
+          @click="openStatusModal(openMenuOrder); openMenuId = null"
+        >
+          <span>🔄</span> Estado
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="printingOrderId === openMenuOrder.id"
+          @click="printOrder(openMenuOrder); openMenuId = null"
+        >
+          <span>🖨️</span> {{ printingOrderId === openMenuOrder.id ? 'Generando...' : 'Imprimir' }}
+        </button>
+        <button
+          v-if="openMenuOrder.status !== 'CANCELLED' && openMenuOrder.status !== 'DELIVERED'"
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-error-600 hover:bg-error-50 transition-colors"
+          @click="openCancelDialog(openMenuOrder); openMenuId = null"
+        >
+          <span>🗑️</span> Cancelar
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Create Order Panel -->
     <SidePanel
@@ -423,9 +385,27 @@ const canEdit = computed(() => currentUserRole.value === 'SUPERADMIN' || current
 
 // Menú de acciones por fila (Ver / Editar / Estado / Imprimir / Cancelar) —
 // un solo dropdown abierto a la vez, identificado por el id de la orden.
+// El contenedor de la tabla desktop usa `overflow-hidden` (para redondear
+// las esquinas), así que un dropdown posicionado `absolute` ahí adentro
+// queda recortado por ese mismo contenedor en vez de flotar por encima —
+// se nota sobre todo con pocas filas. Se resuelve con Teleport a `body` +
+// posición `fixed` calculada desde el botón que lo abrió.
 const openMenuId = ref<string | null>(null)
-const toggleActionsMenu = (orderId: string) => {
-  openMenuId.value = openMenuId.value === orderId ? null : orderId
+const menuPosition = ref({ top: 0, left: 0 })
+const openMenuOrder = computed(() => sortedOrders.value.find(o => o.id === openMenuId.value) || null)
+
+const toggleActionsMenu = (orderId: string, event: MouseEvent) => {
+  if (openMenuId.value === orderId) {
+    openMenuId.value = null
+    return
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const menuWidth = 192 // w-48
+  menuPosition.value = {
+    top: rect.bottom + 4,
+    left: Math.max(8, rect.right - menuWidth)
+  }
+  openMenuId.value = orderId
 }
 const closeActionsMenu = () => {
   openMenuId.value = null
@@ -842,9 +822,15 @@ onMounted(() => {
   // ⋮ y su dropdown usan @click.stop, así que este listener solo dispara
   // para clicks realmente fuera de cualquier menú abierto.
   document.addEventListener('click', closeActionsMenu)
+  // El dropdown es `position: fixed` (Teleport a body) para escapar del
+  // overflow-hidden de la tabla — si se hace scroll sin cerrarlo, queda
+  // flotando lejos del botón que lo abrió. `capture: true` para agarrar
+  // también el scroll de contenedores internos, no solo el de window.
+  window.addEventListener('scroll', closeActionsMenu, true)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeActionsMenu)
+  window.removeEventListener('scroll', closeActionsMenu, true)
 })
 </script>
