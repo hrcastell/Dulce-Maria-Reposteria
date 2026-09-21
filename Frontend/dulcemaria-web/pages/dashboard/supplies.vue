@@ -1,13 +1,10 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Insumos y Gastos</h1>
-      <p class="mt-1 text-warm-500">Control de insumos y registro de gastos</p>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Insumos y Gastos" description="Control de insumos y registro de gastos" />
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-6">
       <button 
         :class="tab === 'supplies' ? 'bg-primary-500 text-white shadow-soft' : 'bg-white text-warm-600 hover:bg-warm-50'" 
         class="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border border-warm-200"
@@ -70,25 +67,29 @@
                 <thead class="bg-warm-50">
                   <tr>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Insumo</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Unidad</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Último Precio</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Presentación</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Precio c/u</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Stock</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Actualizado</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold text-warm-600 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-warm-100">
                   <tr v-if="supplies.length === 0">
-                    <td colspan="5" class="px-4 py-8 text-center text-warm-400">No hay insumos registrados</td>
+                    <td colspan="6" class="px-4 py-8 text-center text-warm-400">No hay insumos registrados</td>
                   </tr>
                   <tr v-for="s in supplies" :key="s.id" class="hover:bg-warm-50/50 transition-colors">
                     <td class="px-4 py-3">
                       <div class="text-sm font-medium text-warm-800">{{ s.name }}</div>
                       <div v-if="s.notes" class="text-xs text-warm-400">{{ s.notes }}</div>
                     </td>
-                    <td class="px-4 py-3 text-sm text-warm-600">{{ s.unit || '—' }}</td>
-                    <td class="px-4 py-3 text-sm font-semibold text-warm-800">
-                      {{ s.last_price_clp ? `$${formatPrice(s.last_price_clp)}` : '—' }}
+                    <td class="px-4 py-3 text-sm text-warm-600">
+                      {{ s.reference_qty }} {{ s.unit || 'unidad' }} — ${{ formatPrice(s.last_price_clp || 0) }}
                     </td>
+                    <td class="px-4 py-3 text-sm font-semibold text-warm-800">
+                      {{ s.last_price_clp ? `$${formatPrice(unitPriceFor(s))} / ${s.unit || 'unidad'}` : '—' }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-warm-600">{{ s.stock_qty }} {{ s.unit || '' }}</td>
                     <td class="px-4 py-3">
                       <span v-if="s.last_updated" :class="isPriceStale(s.last_updated) ? 'text-warning-600' : 'text-warm-500'" class="text-xs">
                         {{ isPriceStale(s.last_updated) ? '⚠️ ' : '' }}{{ formatDate(s.last_updated) }}
@@ -120,16 +121,17 @@
                     
                     <div class="mt-2 flex items-center justify-between text-sm">
                       <div class="text-warm-500">
-                        <span class="block">Unidad: <span class="text-warm-700 font-medium">{{ s.unit || '—' }}</span></span>
+                        <span class="block">Presentación: <span class="text-warm-700 font-medium">{{ s.reference_qty }} {{ s.unit || 'unidad' }}</span></span>
+                        <span class="block">Stock: <span class="text-warm-700 font-medium">{{ s.stock_qty }} {{ s.unit || '' }}</span></span>
                         <span class="block mt-0.5 text-xs">
                           {{ s.last_updated ? formatDate(s.last_updated) : '—' }}
                           <span v-if="isPriceStale(s.last_updated)">⚠️</span>
                         </span>
                       </div>
                       <div class="text-right">
-                        <p class="text-xs text-warm-400">Precio</p>
+                        <p class="text-xs text-warm-400">Precio c/u</p>
                         <p class="font-bold text-warm-800 text-lg">
-                          {{ s.last_price_clp ? `$${formatPrice(s.last_price_clp)}` : '—' }}
+                          {{ s.last_price_clp ? `$${formatPrice(unitPriceFor(s))}` : '—' }}
                         </p>
                       </div>
                     </div>
@@ -178,7 +180,16 @@
             No tenés permisos para registrar gastos. Consultá a un administrador.
           </div>
           <div v-else class="bg-white rounded-2xl shadow-soft border border-warm-100 p-5 mb-4">
-            <h3 class="text-lg font-semibold text-warm-800 mb-4">Registrar Gasto</h3>
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-warm-800">Registrar Gasto</h3>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-warm-100 hover:bg-warm-200 text-warm-700 text-sm font-medium rounded-lg transition-colors"
+                @click="showImportModal = true"
+              >
+                📥 Importar boleta/factura
+              </button>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input v-model="newExpense.description" type="text" placeholder="Descripción / N° boleta *" class="input sm:col-span-2">
               <input v-model="newExpense.expense_date" type="date" class="input">
@@ -414,18 +425,52 @@
       <div class="space-y-4">
         <div>
           <label class="label">Nombre *</label>
-          <input v-model="supplyForm.name" type="text" class="input" placeholder="Ej: Harina">
+          <input v-model="supplyForm.name" type="text" class="input" placeholder="Ej: Huevos">
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="label">Unidad</label>
-            <input v-model="supplyForm.unit" type="text" class="input" placeholder="kg, lt, unidad...">
-          </div>
-          <div>
-            <label class="label">Último precio (CLP)</label>
-            <input v-model.number="supplyForm.last_price_clp" type="number" min="0" class="input" placeholder="0">
+
+        <div class="p-3 bg-warm-50 rounded-xl border border-warm-100">
+          <p class="text-xs font-medium text-warm-600 mb-1">Unidad base del insumo</p>
+          <p class="text-xs text-warm-500 mb-2">
+            En qué unidad llevás el stock de este insumo — ej. gramos para harina o carne, mililitros para leche,
+            unidad para huevos o rollos de papel film. Para pesos y volúmenes, conviene elegir la unidad chica
+            (gramos, mililitros): te da más precisión al recetear.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label text-xs">Unidad</label>
+              <select v-model="supplyForm.unit" class="input">
+                <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="label text-xs flex items-center gap-1">
+                Presentación de referencia
+                <span
+                  class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+                  title="Solo se usa para calcular el precio por unidad de abajo — ej. una bandeja de huevos contiene 30 unidades. No es una compra real: el detalle de cada compra se carga en Gastos."
+                >ⓘ</span>
+              </label>
+              <input v-model.number="supplyForm.reference_qty" type="number" min="0.001" step="any" class="input" placeholder="30">
+            </div>
           </div>
         </div>
+
+        <div>
+          <label class="label">Precio pagado por esa presentación (CLP)</label>
+          <input v-model.number="supplyForm.last_price_clp" type="number" min="0" class="input" placeholder="7500">
+        </div>
+
+        <div v-if="supplyUnitPrice !== null" class="flex items-center justify-between px-3 py-2 bg-primary-50 rounded-xl border border-primary-100">
+          <span class="text-sm text-warm-600">Precio por {{ unitLabel(supplyForm.unit) }}</span>
+          <span class="text-sm font-bold text-warm-800">${{ formatPrice(supplyUnitPrice) }}</span>
+        </div>
+
+        <div>
+          <label class="label">Stock actual</label>
+          <input v-model.number="supplyForm.stock_qty" type="number" min="0" step="any" class="input" placeholder="0">
+          <p class="text-xs text-warm-500 mt-1">Se suma solo al registrar un gasto con detalle — ajustá acá si hace falta corregirlo a mano.</p>
+        </div>
+
         <div>
           <label class="label">Notas</label>
           <textarea v-model="supplyForm.notes" rows="2" class="input" placeholder="Notas opcionales"></textarea>
@@ -434,11 +479,11 @@
       </div>
     </Modal>
 
-    <!-- Expense Item Modal -->
-    <Modal
+    <!-- Expense Item Panel -->
+    <SidePanel
       v-model="showExpenseItemModal"
       :title="editingExpenseItemIndex === null ? 'Agregar Producto al Detalle' : 'Editar Producto'"
-      submit-text="Aceptar"
+      :submit-text="noContentAcknowledged ? (editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así') : 'Aceptar'"
       @submit="confirmExpenseItemModal"
     >
       <div class="space-y-4">
@@ -499,7 +544,9 @@
           <!-- Creación inline de insumo -->
           <div v-if="draftExpenseItem._showCreateSupply" class="mt-2 p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
             <p class="text-xs text-warm-600">Nuevo insumo: <span class="font-semibold">{{ draftExpenseItem._supplySearch }}</span></p>
-            <input v-model="draftExpenseItem._createUnit" type="text" placeholder="Unidad (kg, lt, unidad...)" class="input text-sm">
+            <select v-model="draftExpenseItem._createUnit" class="input text-sm">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
             <div class="flex gap-2">
               <button
                 type="button"
@@ -514,27 +561,97 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label class="label">Cantidad *</label>
+            <label class="label">Cantidad comprada *</label>
             <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
           </div>
           <div>
-            <label class="label">Precio Unitario (CLP, c/IVA) *</label>
+            <label class="label flex items-center gap-1">
+              Unidad de compra *
+              <span
+                class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+                title="Elegí la unidad directa (Gramos, Kilogramos, Mililitros, Litros) si compraste a granel — ej. 3 kilos de carne. Elegí 'Unidad' si compraste por paquete, saco, bandeja o caja cerrada — ej. un paquete de canela, un saco de harina, o una caja de leche con varios cartones adentro — para después indicar la presentación de cada una."
+              >ⓘ</span>
+            </label>
+            <select v-model="draftExpenseItem.unit" class="input">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Precio por unidad de compra (CLP, c/IVA) *</label>
             <input v-model.number="draftExpenseItem.unit_price_clp" type="number" min="0" class="input">
           </div>
         </div>
 
-        <div class="flex justify-between items-center pt-3 border-t border-warm-100 text-sm">
-          <span class="text-warm-500">Total línea:</span>
-          <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+        <!-- Presentación de esta compra — solo cuando se compra por unidad discreta
+             (paquete, saco, bandeja, caja...), para poder distinguir "2 paquetes de
+             250g" de "2 gramos". -->
+        <div v-if="draftExpenseItem.unit === 'unidad'" class="p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
+          <label class="label flex items-center gap-1">
+            Presentación de esta compra: ¿qué trae cada unidad? (opcional)
+            <span
+              class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+              title="Cuánto pesa o mide CADA unidad comprada — ej. 250 / Gramos para un paquete de canela de 250 g, o 25 / Kilogramos para un saco de harina de 25 kg. Para una caja de leche con 12 cartones de 1 litro, no cargues cada cartón: poné directamente 12 / Litros (el total de la caja). Si lo dejás vacío, el sistema asume que 1 unidad comprada = 1 unidad de stock (correcto para insumos que se cuentan de a uno, como huevos)."
+            >ⓘ</span>
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <input v-model.number="draftExpenseItem.content_qty" type="number" min="0.001" step="0.001" class="input" placeholder="Ej: 250">
+            <select v-model="draftExpenseItem.content_unit" class="input">
+              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
+          </div>
+          <p class="text-xs text-warm-500">
+            Ej: paquete de 250 g de canela → 250 / Gramos. Caja de leche con 12 litros en total → 12 / Litros.
+            4 bolsas de fondant de 500 g → cantidad comprada 4, y acá 500 / Gramos.
+            Si lo dejás vacío, cada unidad comprada suma 1 al stock del insumo.
+          </p>
+
+          <!-- Gate de confirmación: se arma en confirmExpenseItemModal() cuando se
+               intenta guardar sin contenido neto para un insumo que no se cuenta de
+               a uno — obliga a un segundo click para evitar repetir el bug original
+               (paquete de 250g contado por descuido como 1 unidad de stock). -->
+          <div v-if="noContentAcknowledged" class="mt-2 p-2.5 bg-warning-50 border border-warning-100 rounded-lg text-xs text-warning-700 space-y-1">
+            <p>
+              No especificaste el contenido neto de <strong>"{{ draftExpenseItem.product_name }}"</strong> —
+              se va a sumar 1 unidad exacta al stock.
+            </p>
+            <p>¿Es correcto? Hacé clic de nuevo en "{{ editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así' }}" para confirmar, o completá el contenido neto arriba si no lo es.</p>
+          </div>
+        </div>
+
+        <p class="text-xs text-warm-500">Ej: si compraste 10 kg sueltos, poné cantidad 10 y unidad Kilogramos.</p>
+
+        <div class="pt-3 border-t border-warm-100 space-y-1.5">
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-warm-500">Total línea:</span>
+            <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-warm-500">Suma a inventario:</span>
+            <span class="font-bold text-primary-700">{{ itemStockPreview(draftExpenseItem) }}</span>
+          </div>
         </div>
       </div>
-    </Modal>
-  </div>
+    </SidePanel>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
+
+    <ExpenseImportModal
+      v-model="showImportModal"
+      @parsed="startImportQueue"
+    />
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
+import { norm, type QuoteLineItem } from '~/lib/quote-grid'
+
 const api = useApi()
 
 definePageMeta({ 
@@ -550,6 +667,22 @@ const tab = ref<'supplies' | 'expenses'>('supplies')
 // los controles que fallarían, en vez de dejar que el usuario los toque y falle.
 const currentUserRole = ref('')
 const canWrite = computed(() => currentUserRole.value !== 'STAFF')
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
+
+// Unidades fijas — antes era texto libre y permitía cargar cosas como "1 Kg" o
+// "30 Unidades" en vez de solo "kg"/"unidad", lo que rompía la conversión (el
+// sistema las tomaba como una unidad "rara" compatible solo consigo misma, sin
+// convertir de verdad). Debe coincidir con Backend/dulcemaria-api/src/lib/units.js.
+const UNIT_OPTIONS = [
+  { value: 'g', label: 'Gramos (g)' },
+  { value: 'kg', label: 'Kilogramos (kg)' },
+  { value: 'ml', label: 'Mililitros (ml)' },
+  { value: 'l', label: 'Litros (l)' },
+  { value: 'unidad', label: 'Unidad' },
+]
+const unitLabel = (code: string) => UNIT_OPTIONS.find((u) => u.value === code)?.label || code || 'Unidad'
 
 // ── Supplies ─────────────────────────────────────────────────────────────────
 const supplies = ref<any[]>([])
@@ -563,7 +696,24 @@ const showSupplyModal = ref(false)
 const editingSupply = ref<any>(null)
 const supplySaving = ref(false)
 const supplyFormError = ref('')
-const supplyForm = ref({ name: '', unit: '', last_price_clp: null as number | null, notes: '' })
+const supplyForm = ref({
+  name: '',
+  unit: 'unidad',
+  last_price_clp: null as number | null,
+  reference_qty: 1 as number,
+  stock_qty: 0 as number,
+  notes: '',
+})
+
+// Precio por unidad de referencia (ej: $7.500 / 30 huevos = $250 c/u) — mismo
+// cálculo que usa el backend para costear recetas, mostrado acá para que quede
+// claro de inmediato qué está pagando por unidad.
+const supplyUnitPrice = computed(() => {
+  const price = supplyForm.value.last_price_clp
+  const ref = supplyForm.value.reference_qty
+  if (!price || !ref || ref <= 0) return null
+  return price / ref
+})
 
 const now = new Date()
 const months = [
@@ -576,11 +726,26 @@ const months = [
 ]
 
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n))
+// A diferencia de formatPrice (CLP, siempre entero), cantidades/contenidos
+// pueden venir con decimales (step 0.001) — redondear a entero acá mostraría
+// "3" en vez de "2.5 kg".
+const formatQty = (n: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 3 }).format(n)
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('es-CL')
+const unitPriceFor = (s: any) => (s.last_price_clp && s.reference_qty ? s.last_price_clp / s.reference_qty : 0)
 const isPriceStale = (iso: string) => {
   const d = new Date(iso)
   const diff = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)
   return diff > 30
+}
+
+// El backend manda `error` como string o, en fallos de validación zod, como
+// `{ formErrors, fieldErrors }` (parsed.error.flatten()) — sin esto, ese objeto
+// se interpola directo en el template y se ve literal "[object Object]".
+const errorMessage = (err: any, fallback: string): string => {
+  if (!err) return fallback
+  if (typeof err === 'string') return err
+  const firstFieldError = err.fieldErrors && (Object.values(err.fieldErrors)[0] as string[] | undefined)?.[0]
+  return firstFieldError || err.formErrors?.[0] || fallback
 }
 
 let searchTimer: any = null
@@ -597,7 +762,7 @@ const loadSupplies = async () => {
     const res = await api.get<{ ok: boolean; items: any[] }>(`/admin/supplies${q}`)
     if (res.ok) supplies.value = res.items
   } catch (e: any) {
-    suppliesError.value = e?.data?.error || 'Error al cargar insumos'
+    suppliesError.value = errorMessage(e?.data?.error, 'Error al cargar insumos')
   } finally {
     suppliesLoading.value = false
   }
@@ -617,8 +782,10 @@ const openSupplyModal = (supply?: any) => {
   supplyFormError.value = ''
   supplyForm.value = {
     name: supply?.name || '',
-    unit: supply?.unit || '',
+    unit: supply?.unit || 'unidad',
     last_price_clp: supply?.last_price_clp ?? null,
+    reference_qty: supply?.reference_qty ?? 1,
+    stock_qty: supply?.stock_qty ?? 0,
     notes: supply?.notes || '',
   }
   showSupplyModal.value = true
@@ -636,6 +803,8 @@ const saveSupply = async () => {
       name: supplyForm.value.name.trim(),
       unit: supplyForm.value.unit || null,
       last_price_clp: supplyForm.value.last_price_clp || null,
+      reference_qty: supplyForm.value.reference_qty || 1,
+      stock_qty: supplyForm.value.stock_qty ?? 0,
       notes: supplyForm.value.notes || null,
     }
     if (editingSupply.value) {
@@ -643,11 +812,15 @@ const saveSupply = async () => {
     } else {
       await api.post('/admin/supplies', body)
     }
+    const wasEditing = !!editingSupply.value
     showSupplyModal.value = false
     await loadSupplies()
     await loadAllSupplies()
+    noticeVariant.value = 'success'
+    noticeMessage.value = wasEditing ? 'Insumo actualizado correctamente.' : 'Insumo creado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
-    supplyFormError.value = e?.data?.error || 'Error al guardar'
+    supplyFormError.value = errorMessage(e?.data?.error, 'Error al guardar')
   } finally {
     supplySaving.value = false
   }
@@ -661,15 +834,23 @@ interface ExpenseItem {
   supply_id: string
   product_name: string
   quantity: number
+  unit: string
   unit_price_clp: number
   total_clp: number
+  // Compra por unidad discreta (paquete/saco) con contenido neto conocido — ver
+  // comentario de columna en Backend/dulcemaria-api/src/migrations/complete.js.
+  content_qty: number | null
+  content_unit: string | null
 }
 
 interface DraftExpenseItem {
   supply_id: string
   product_name: string
   quantity: number | null
+  unit: string
   unit_price_clp: number | null
+  content_qty: number | null
+  content_unit: string
   _supplySearch: string
   _searchResults: any[]
   _searchSeq: number
@@ -683,15 +864,60 @@ const createEmptyExpenseItem = (): DraftExpenseItem => ({
   supply_id: '',
   product_name: '',
   quantity: 1,
+  unit: 'unidad',
   unit_price_clp: null,
+  content_qty: null,
+  content_unit: 'g',
   _supplySearch: '',
   _searchResults: [],
   _searchSeq: 0,
   _showSupplyDropdown: false,
   _showCreateSupply: false,
-  _createUnit: '',
+  _createUnit: 'unidad',
   _creatingSupply: false,
 })
+
+// Espejo liviano de Backend/dulcemaria-api/src/lib/units.js — solo para la vista
+// previa en vivo del detalle de gasto; el backend es la fuente de verdad al guardar.
+const UNIT_TO_BASE: Record<string, { dim: string; toBase: number }> = {
+  g: { dim: 'weight', toBase: 1 },
+  kg: { dim: 'weight', toBase: 1000 },
+  ml: { dim: 'volume', toBase: 1 },
+  l: { dim: 'volume', toBase: 1000 },
+  unidad: { dim: 'count', toBase: 1 },
+}
+const previewConvert = (value: number, from: string, to: string): number | null => {
+  if (from === to) return value
+  const f = UNIT_TO_BASE[from]
+  const t = UNIT_TO_BASE[to]
+  if (!f || !t || f.dim !== t.dim) return null
+  return (value * f.toBase) / t.toBase
+}
+
+// Cuánto suma realmente al stock del insumo este ítem del detalle — muestra el
+// efecto real ANTES de guardar, para no tener que hacer la cuenta de cabeza.
+const itemStockPreview = (item: DraftExpenseItem): string => {
+  if (!item.supply_id || !item.quantity) return '—'
+  const supply = allSupplies.value.find((s) => s.id === item.supply_id)
+  const supplyUnit = supply?.unit || item.unit
+  let amount: number | null
+  let formula = ''
+  if (item.unit === 'unidad' && item.content_qty && item.content_unit) {
+    const content = previewConvert(item.content_qty, item.content_unit, supplyUnit)
+    amount = content == null ? null : item.quantity * content
+    formula = `${formatQty(item.quantity)} × ${formatQty(item.content_qty)} ${item.content_unit} = `
+  } else {
+    amount = previewConvert(item.quantity, item.unit, supplyUnit)
+  }
+  if (amount == null) {
+    // La presentación de esta compra no se puede convertir a la unidad base
+    // del insumo (ej. gramos vs. unidad) — no son la misma dimensión
+    // (peso/volumen/conteo). Se apunta a dónde arreglarlo, no solo que falló.
+    return `Unidad incompatible con la unidad base del insumo (revisá "${supply?.name || item.product_name}" en la pestaña Insumos)`
+  }
+  const label = unitLabel(supplyUnit)
+  return `${formula}${formatQty(amount)} ${label}`
+}
 
 const expenses = ref<any[]>([])
 const expensesTotal = ref(0)
@@ -715,6 +941,165 @@ const showExpenseItemModal = ref(false)
 const editingExpenseItemIndex = ref<number | null>(null)
 const draftExpenseItem = ref<DraftExpenseItem>(createEmptyExpenseItem())
 const expenseItemModalError = ref('')
+
+// Gate de confirmación para "Unidad de compra = Unidad" sin contenido neto (ver
+// confirmExpenseItemModal). Se re-arma en falso apenas cambia cualquier campo
+// relevante, para no dejar una confirmación vieja "colgada" tras editar algo.
+const noContentAcknowledged = ref(false)
+watch(
+  () => [
+    draftExpenseItem.value.unit,
+    draftExpenseItem.value.content_qty,
+    draftExpenseItem.value.content_unit,
+    draftExpenseItem.value.supply_id,
+  ],
+  () => { noContentAcknowledged.value = false }
+)
+
+// ── Importación de boleta/factura (foto/PDF/Excel) — ver components/ExpenseImportModal.vue ──
+// Cada línea detectada pasa, una a la vez, por el MISMO panel "Agregar Producto
+// al Detalle" de arriba (con su buscador de insumo y su gate de contenido neto)
+// en vez de un guardado masivo automático — la supervisión queda del lado del
+// usuario, el motor solo prellena un borrador.
+const showImportModal = ref(false)
+const importQueue = ref<QuoteLineItem[]>([])
+const importQueueIndex = ref(0)
+const importQueueStartCount = ref(0)
+const importMode = ref(false)
+// true solo entre "se confirmó este ítem" y "el watch de abajo ya lo procesó" —
+// distingue un cierre por confirmación (ya manejado en confirmExpenseItemModal)
+// de un cierre por cancelar/backdrop/Esc (que el watch trata como "saltar ítem").
+const importJustConfirmed = ref(false)
+
+// Distancia de Levenshtein clásica (DP) — desempate del fuzzy-match cuando el
+// solapamiento de tokens no alcanza para decidir (ej. ruido de OCR: "AZUKAR" vs "AZUCAR").
+const levenshteinDistance = (a: string, b: string): number => {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+// Puntaje de similitud 0-1 entre la descripción de la boleta y el nombre de un
+// insumo del catálogo: solapamiento de tokens normalizados (tipo Jaccard) +
+// distancia de Levenshtein normalizada como desempate, más un bonus si uno es
+// substring del otro. Sin librerías nuevas — reusa `norm()` de lib/quote-grid.ts.
+const supplyMatchScore = (descripcion: string, supplyName: string): number => {
+  const a = norm(descripcion)
+  const b = norm(supplyName)
+  if (!a || !b) return 0
+  if (a === b) return 1
+  const tokensA = new Set(a.split(' ').filter(Boolean))
+  const tokensB = new Set(b.split(' ').filter(Boolean))
+  const shared = [...tokensA].filter((t) => tokensB.has(t)).length
+  const jaccard = shared / Math.max(1, Math.max(tokensA.size, tokensB.size))
+  const maxLen = Math.max(a.length, b.length)
+  const levSim = maxLen ? 1 - levenshteinDistance(a, b) / maxLen : 0
+  const substringBonus = a.includes(b) || b.includes(a) ? 0.15 : 0
+  return Math.min(1, jaccard * 0.6 + levSim * 0.4 + substringBonus)
+}
+
+const SUPPLY_MATCH_THRESHOLD = 0.75
+// Mejor candidato del catálogo para una descripción OCR, o null si ninguno supera
+// el umbral — en ese caso se deja la búsqueda precargada con el texto crudo en
+// vez de adivinar, reusando el flujo de búsqueda/creación inline que ya existe.
+const findBestSupplyMatch = (descripcion: string): any => {
+  let best: any = null
+  let bestScore = 0
+  for (const s of allSupplies.value) {
+    const score = supplyMatchScore(descripcion, s.name)
+    if (score > bestScore) {
+      bestScore = score
+      best = s
+    }
+  }
+  return bestScore >= SUPPLY_MATCH_THRESHOLD ? best : null
+}
+
+// Abre el panel existente prellenado con la línea `index` de la cola de importación.
+const openImportedItem = (index: number) => {
+  const line = importQueue.value[index]
+  if (!line) return
+  importQueueIndex.value = index
+  importMode.value = true
+  importJustConfirmed.value = false
+  editingExpenseItemIndex.value = null
+  draftExpenseItem.value = createEmptyExpenseItem()
+  expenseItemModalError.value = ''
+
+  const match = findBestSupplyMatch(line.descripcion)
+  if (match) {
+    selectSupplyForItem(draftExpenseItem.value, match)
+  } else {
+    draftExpenseItem.value._supplySearch = line.descripcion
+  }
+  // El OCR nunca puede saber si la compra viene suelta (g/kg/ml/l) o por unidad
+  // discreta (paquete/saco) — arranca siempre en 'unidad' para forzar el gate de
+  // contenido neto existente, la misma red de seguridad del fix original.
+  draftExpenseItem.value.unit = 'unidad'
+  draftExpenseItem.value.quantity = line.cantidad && line.cantidad > 0 ? line.cantidad : 1
+  if (line.valorUnitario != null) {
+    draftExpenseItem.value.unit_price_clp = Math.round(line.valorUnitario)
+  } else if (line.total != null && line.cantidad) {
+    draftExpenseItem.value.unit_price_clp = Math.round(line.total / line.cantidad)
+  } else {
+    draftExpenseItem.value.unit_price_clp = null
+  }
+  showExpenseItemModal.value = true
+}
+
+const finishImportQueue = () => {
+  const added = newExpense.value.items.length - importQueueStartCount.value
+  const total = importQueue.value.length
+  importMode.value = false
+  importQueue.value = []
+  importQueueIndex.value = 0
+  noticeVariant.value = 'success'
+  noticeMessage.value = `Se agregaron ${added} de ${total} ítems detectados.`
+  showNotice.value = true
+}
+
+const advanceImportQueue = () => {
+  const nextIndex = importQueueIndex.value + 1
+  if (nextIndex < importQueue.value.length) {
+    openImportedItem(nextIndex)
+  } else {
+    finishImportQueue()
+  }
+}
+
+// Punto de entrada llamado por ExpenseImportModal cuando el usuario confirma
+// qué ítems detectados cargar (evento `parsed`).
+const startImportQueue = (lines: QuoteLineItem[]) => {
+  if (!lines.length) return
+  importQueue.value = lines
+  importQueueStartCount.value = newExpense.value.items.length
+  openImportedItem(0)
+}
+
+// Si el panel se cierra SIN pasar por confirmExpenseItemModal (Cancelar, click
+// en el backdrop, Esc) durante una importación en curso, se trata como "saltar
+// este ítem" — si no, un solo click accidental fuera del panel perdería el
+// resto de la cola en silencio.
+watch(showExpenseItemModal, (isOpen) => {
+  if (isOpen || !importMode.value) return
+  if (importJustConfirmed.value) {
+    importJustConfirmed.value = false
+    return
+  }
+  advanceImportQueue()
+})
 
 // ── Proveedores (buscador + creación/eliminación inline en el form de gasto) ──
 const providerSearch = ref('')
@@ -769,7 +1154,7 @@ const createProvider = async () => {
     const res = await api.post<{ ok: boolean; provider: any }>('/admin/providers', { name })
     if (res.ok) selectProvider(res.provider)
   } catch (e: any) {
-    providerError.value = e?.data?.error || 'Error al crear proveedor'
+    providerError.value = errorMessage(e?.data?.error, 'Error al crear proveedor')
   } finally {
     creatingProvider.value = false
   }
@@ -784,7 +1169,7 @@ const deleteProvider = async (p: any) => {
     providerResults.value = providerResults.value.filter((x) => x.id !== p.id)
     if (newExpense.value.provider_id === p.id) clearProviderSelection()
   } catch (e: any) {
-    providerError.value = e?.data?.error || 'Error al eliminar proveedor'
+    providerError.value = errorMessage(e?.data?.error, 'Error al eliminar proveedor')
   } finally {
     deletingProviderId.value = null
   }
@@ -840,13 +1225,15 @@ const filteredSuppliesFor = (item: DraftExpenseItem) => item._searchResults
 const selectSupplyForItem = (item: DraftExpenseItem, supply: any) => {
   item.supply_id = supply.id
   item.product_name = supply.name
+  item.unit = supply.unit || 'unidad'
   item._supplySearch = ''
   item._searchResults = []
   item._showSupplyDropdown = false
   item._showCreateSupply = false
-  item._createUnit = ''
-  if (supply.last_price_clp && !item.unit_price_clp) {
-    item.unit_price_clp = supply.last_price_clp
+  item._createUnit = 'unidad'
+  const referenceUnitPrice = unitPriceFor(supply)
+  if (referenceUnitPrice && !item.unit_price_clp) {
+    item.unit_price_clp = Math.round(referenceUnitPrice)
   }
 }
 
@@ -868,13 +1255,14 @@ const createSupplyForItem = async (item: DraftExpenseItem) => {
     })
     if (res.ok) selectSupplyForItem(item, res.supply)
   } catch (e: any) {
-    expenseItemModalError.value = e?.data?.error || 'Error al crear insumo'
+    expenseItemModalError.value = errorMessage(e?.data?.error, 'Error al crear insumo')
   } finally {
     item._creatingSupply = false
   }
 }
 
 const openAddExpenseItemModal = () => {
+  importMode.value = false
   editingExpenseItemIndex.value = null
   draftExpenseItem.value = createEmptyExpenseItem()
   expenseItemModalError.value = ''
@@ -882,6 +1270,7 @@ const openAddExpenseItemModal = () => {
 }
 
 const openEditExpenseItemModal = (index: number) => {
+  importMode.value = false
   editingExpenseItemIndex.value = index
   const original = newExpense.value.items[index]
   draftExpenseItem.value = {
@@ -889,7 +1278,10 @@ const openEditExpenseItemModal = (index: number) => {
     supply_id: original.supply_id,
     product_name: original.product_name,
     quantity: original.quantity,
+    unit: original.unit || 'unidad',
     unit_price_clp: original.unit_price_clp,
+    content_qty: original.content_qty ?? null,
+    content_unit: original.content_unit || 'g',
   }
   expenseItemModalError.value = ''
   showExpenseItemModal.value = true
@@ -913,23 +1305,50 @@ const confirmExpenseItemModal = () => {
     expenseItemModalError.value = 'El precio unitario es requerido'
     return
   }
+
+  // Compra por unidad discreta sin contenido neto: puede ser intencional (insumos
+  // que se cuentan de a uno, ej. huevos) o un descuido — el bug original que este
+  // campo vino a corregir. Si el insumo no se cuenta de a uno, se exige un click
+  // extra de confirmación antes de guardar (ver banner "noContentAcknowledged").
+  const selectedSupply = allSupplies.value.find((s) => s.id === d.supply_id)
+  const needsNoContentAck = d.unit === 'unidad' && !d.content_qty && selectedSupply?.unit !== 'unidad'
+  if (needsNoContentAck && !noContentAcknowledged.value) {
+    expenseItemModalError.value = ''
+    noContentAcknowledged.value = true
+    return
+  }
+  noContentAcknowledged.value = false
+
   const existingKey = editingExpenseItemIndex.value !== null
     ? newExpense.value.items[editingExpenseItemIndex.value]._key
     : crypto.randomUUID()
+  const hasContent = d.unit === 'unidad' && !!d.content_qty && !!d.content_unit
   const item: ExpenseItem = {
     _key: existingKey,
     supply_id: d.supply_id,
     product_name: d.product_name,
     quantity: d.quantity,
+    unit: d.unit,
     unit_price_clp: d.unit_price_clp,
     total_clp: Math.round(d.quantity * d.unit_price_clp),
+    content_qty: hasContent ? d.content_qty : null,
+    content_unit: hasContent ? d.content_unit : null,
   }
   if (editingExpenseItemIndex.value !== null) {
     newExpense.value.items[editingExpenseItemIndex.value] = item
   } else {
     newExpense.value.items.push(item)
   }
-  showExpenseItemModal.value = false
+
+  if (importMode.value) {
+    // Marcado ANTES de cerrar para que el watch de arriba no lo vuelva a
+    // procesar como "cancelado" — acá ya se confirmó y guardó de verdad.
+    importJustConfirmed.value = true
+    showExpenseItemModal.value = false
+    advanceImportQueue()
+  } else {
+    showExpenseItemModal.value = false
+  }
 }
 
 const addExpense = async () => {
@@ -964,7 +1383,7 @@ const addExpense = async () => {
     await loadSupplies()
     await loadAllSupplies()
   } catch (e: any) {
-    expenseError.value = e?.data?.error || 'Error al registrar gasto'
+    expenseError.value = errorMessage(e?.data?.error, 'Error al registrar gasto')
   } finally {
     expenseSaving.value = false
   }
@@ -976,7 +1395,9 @@ const deleteExpense = async (id: string) => {
     await api.delete(`/admin/supplies/expenses/${id}`)
     await loadExpenses()
   } catch (e: any) {
-    alert(e?.data?.error || 'Error al eliminar')
+    noticeVariant.value = 'error'
+    noticeMessage.value = errorMessage(e?.data?.error, 'Error al eliminar')
+    showNotice.value = true
   }
 }
 

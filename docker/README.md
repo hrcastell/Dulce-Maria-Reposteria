@@ -69,28 +69,31 @@ workflow either.
    not the internal compose service name — because those URLs are read by
    the browser, not by the container network.
 
-At this point the database has schema but no users. To create the first
-SUPERADMIN account, use the bootstrap endpoint (the repo's own `npm run
-seed:superadmin` script is broken — it requires `@prisma/client`, which
-isn't installed in this project — so this is the supported path for local
-dev):
-
-```bash
-curl -X POST http://localhost:4301/auth/bootstrap \
-  -H "Content-Type: application/json" \
-  -d '{
-    "token": "'"$BOOTSTRAP_TOKEN"'",
-    "email": "'"$ADMIN_EMAIL"'",
-    "password": "'"$ADMIN_PASSWORD"'"
-  }'
-```
-
-(or just substitute the literal values you set in `.env` — by default,
-`local-dev-bootstrap-token-change-me`, `admin@dulcemaria.local`, and
-`ChangeMe123!`).
+At this point the database has schema but no users. The `backend` service
+creates the first SUPERADMIN **automatically** on startup: when
+`NODE_ENV != production` and the `users` table is empty, it inserts one from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` (see
+`Backend/dulcemaria-api/src/bootstrap/autoSuperadmin.js`). Look for
+`✅ Auto-bootstrap: SUPERADMIN creado (...)` in `docker compose logs backend`.
+Once the table has any user it does nothing — it never overwrites an
+existing account, and it never runs when `NODE_ENV=production`. Set
+`AUTO_BOOTSTRAP_SUPERADMIN=false` in `.env` to turn it off.
 
 Then log in through the admin panel at http://localhost:4302 with that
 email/password.
+
+**Manual fallback** — if you disabled the auto-bootstrap, or need to reset
+the password on a DB that already has users, hit the protected endpoint
+directly (this is also the only path in production). The token goes in the
+query string; the credentials come from the backend's `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` env, not the request body. The `npm run seed:superadmin`
+script is broken — it requires `@prisma/client`, which isn't installed.
+
+```bash
+curl -X POST "http://localhost:4301/auth/bootstrap?token=$BOOTSTRAP_TOKEN"
+```
+
+(default token: `local-dev-bootstrap-token-change-me`).
 
 ## URLs
 

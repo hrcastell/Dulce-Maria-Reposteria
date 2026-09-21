@@ -1,13 +1,13 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Dashboard</h1>
-      <p class="mt-1 text-warm-500">Bienvenido de vuelta, {{ user?.email?.split('@')[0] || 'Administrador' }}</p>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader
+      title="Dashboard"
+      :description="`Bienvenido de vuelta, ${user?.email?.split('@')[0] || 'Administrador'}`"
+    />
 
     <!-- Quick Stats -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
       <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-soft border border-warm-100">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary-100 flex items-center justify-center text-xl sm:text-2xl">
@@ -91,29 +91,52 @@
           </NuxtLink>
         </div>
 
-        <div v-if="recentOrders.length > 0" class="bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
-          <table class="min-w-full divide-y divide-warm-100">
-            <thead class="bg-warm-50">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">#</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Cliente</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Estado</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Total</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-warm-100">
-              <tr v-for="order in recentOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
-                <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
-                <td class="px-4 py-3 text-sm text-warm-700">{{ order.customer_name }}</td>
-                <td class="px-4 py-3">
-                  <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
-                    {{ formatStatus(order.status) }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-sm font-medium text-warm-800">${{ formatPrice(order.total_clp) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="recentOrders.length > 0">
+          <!-- Tabla (desktop) -->
+          <div class="hidden sm:block overflow-x-auto bg-white rounded-2xl shadow-soft border border-warm-100">
+            <table class="min-w-full divide-y divide-warm-100">
+              <thead class="bg-warm-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">#</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Cliente</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Estado</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-warm-500 uppercase">Total</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-warm-100">
+                <tr v-for="order in recentOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
+                  <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
+                  <td class="px-4 py-3 text-sm text-warm-700">{{ order.customer_name }}</td>
+                  <td class="px-4 py-3">
+                    <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
+                      {{ formatStatus(order.status) }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm font-medium text-warm-800">${{ formatPrice(order.total_clp) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Cards (mobile) -->
+          <div class="sm:hidden space-y-3">
+            <div
+              v-for="order in recentOrders"
+              :key="order.id"
+              class="bg-white rounded-xl p-4 shadow-soft border border-warm-100"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-warm-800">#{{ order.order_no }}</p>
+                  <p class="text-sm text-warm-600 truncate">{{ order.customer_name }}</p>
+                </div>
+                <span :class="getStatusBadgeClass(order.status)" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0">
+                  {{ formatStatus(order.status) }}
+                </span>
+              </div>
+              <p class="text-sm font-medium text-warm-800 mt-2">${{ formatPrice(order.total_clp) }}</p>
+            </div>
+          </div>
         </div>
         <div v-else class="bg-white rounded-2xl p-8 text-center border border-warm-100 shadow-soft">
           <p class="text-warm-600 font-medium">No hay órdenes recientes</p>
@@ -153,7 +176,8 @@
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">

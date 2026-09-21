@@ -1,10 +1,7 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Reportes</h1>
-      <p class="mt-1 text-warm-500">Análisis de ventas y métricas del negocio</p>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Reportes" description="Análisis de ventas y métricas del negocio" />
 
     <!-- Mode Tabs -->
     <div class="flex flex-wrap gap-2 mb-6">
@@ -410,7 +407,8 @@
       <h3 class="text-lg font-semibold text-warm-800 mb-2">Selecciona un período</h3>
       <p class="text-warm-500">Elige una fecha, mes o año para ver el reporte detallado</p>
     </div>
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">

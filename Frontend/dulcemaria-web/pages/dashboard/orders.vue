@@ -1,21 +1,19 @@
 <template>
-  <div>
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-warm-800">Órdenes</h1>
-        <p class="mt-1 text-warm-500">Gestiona los pedidos de tus clientes</p>
-      </div>
-      <button
-        @click="openCreateModal"
-        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span>Nueva Orden</span>
-      </button>
-    </div>
+  <PageContainer as="main">
+    <div class="space-y-6 sm:space-y-8">
+    <PageHeader title="Órdenes" description="Gestiona los pedidos de tus clientes">
+      <template #actions>
+        <button
+          @click="openCreateModal"
+          class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200 shadow-soft hover:shadow-md"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Nueva Orden</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
       <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin"></div>
@@ -30,9 +28,9 @@
     </div>
 
     <div v-else>
-      <!-- Search Bar -->
-      <div class="mb-6">
-        <div class="relative max-w-md">
+      <!-- Search Bar & Date Range Filter -->
+      <div class="mb-6 flex flex-col sm:flex-row sm:items-end gap-4">
+        <div class="relative max-w-md w-full">
           <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <svg class="h-5 w-5 text-warm-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -46,24 +44,44 @@
             @input="handleSearch"
           >
         </div>
+
+        <!-- Filtro externo de rango de fechas — independiente del orden por columna -->
+        <div class="flex items-end gap-3">
+          <div>
+            <label class="block text-xs font-medium text-warm-500 mb-1">Desde</label>
+            <input
+              v-model="dateFrom"
+              type="date"
+              class="block px-3 py-2.5 border border-warm-200 rounded-xl text-warm-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all duration-200 bg-white"
+            >
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-warm-500 mb-1">Hasta</label>
+            <input
+              v-model="dateTo"
+              type="date"
+              class="block px-3 py-2.5 border border-warm-200 rounded-xl text-warm-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all duration-200 bg-white"
+            >
+          </div>
+        </div>
       </div>
 
       <!-- Stats Bar -->
       <div class="flex items-center justify-between mb-6">
         <p class="text-sm text-warm-500">
-          <span class="font-medium text-warm-700">{{ filteredOrders.length }}</span> {{ searchQuery ? 'de ' + orders.length + ' órdenes' : 'órdenes en total' }}
+          <span class="font-medium text-warm-700">{{ sortedOrders.length }}</span> {{ (searchQuery || dateFrom || dateTo) ? 'de ' + orders.length + ' órdenes' : 'órdenes en total' }}
         </p>
       </div>
 
       <!-- Empty State -->
-      <div v-if="filteredOrders.length === 0" class="text-center py-16 bg-white rounded-2xl shadow-soft border border-warm-100">
+      <div v-if="sortedOrders.length === 0" class="text-center py-16 bg-white rounded-2xl shadow-soft border border-warm-100">
         <div class="w-20 h-20 bg-warm-50 rounded-full flex items-center justify-center mx-auto mb-4">
           <span class="text-4xl">📦</span>
         </div>
         <h3 class="text-lg font-semibold text-warm-800 mb-2">No hay órdenes</h3>
-        <p class="text-warm-500 mb-6">{{ searchQuery ? 'No se encontraron resultados para tu búsqueda' : 'Aún no tienes pedidos registrados en el sistema' }}</p>
+        <p class="text-warm-500 mb-6">{{ (searchQuery || dateFrom || dateTo) ? 'No se encontraron resultados para tu búsqueda' : 'Aún no tienes pedidos registrados en el sistema' }}</p>
         <button
-          v-if="!searchQuery"
+          v-if="!searchQuery && !dateFrom && !dateTo"
           @click="openCreateModal"
           class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-all duration-200"
         >
@@ -75,21 +93,51 @@
       </div>
 
       <!-- Desktop Table -->
-      <div v-if="filteredOrders.length > 0" class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
+      <div v-if="sortedOrders.length > 0" class="hidden sm:block bg-white rounded-2xl shadow-soft border border-warm-100 overflow-hidden">
         <table class="min-w-full divide-y divide-warm-100">
           <thead class="bg-warm-50">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">#</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Cliente</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Estado</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Pago</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Total</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider">Fecha</th>
+              <th
+                class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider cursor-pointer select-none hover:text-warm-800 transition-colors"
+                @click="toggleSort('customer_name')"
+              >
+                Cliente
+                <span v-if="sortColumn === 'customer_name'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th
+                class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider cursor-pointer select-none hover:text-warm-800 transition-colors"
+                @click="toggleSort('status')"
+              >
+                Estado
+                <span v-if="sortColumn === 'status'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th
+                class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider cursor-pointer select-none hover:text-warm-800 transition-colors"
+                @click="toggleSort('payment_status')"
+              >
+                Pago
+                <span v-if="sortColumn === 'payment_status'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th
+                class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider cursor-pointer select-none hover:text-warm-800 transition-colors"
+                @click="toggleSort('total_clp')"
+              >
+                Total
+                <span v-if="sortColumn === 'total_clp'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th
+                class="px-4 py-3 text-left text-xs font-semibold text-warm-600 uppercase tracking-wider cursor-pointer select-none hover:text-warm-800 transition-colors"
+                @click="toggleSort('created_at')"
+              >
+                Fecha
+                <span v-if="sortColumn === 'created_at'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
               <th class="px-4 py-3 text-right text-xs font-semibold text-warm-600 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-warm-100">
-            <tr v-for="order in filteredOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
+            <tr v-for="order in sortedOrders" :key="order.id" class="hover:bg-warm-50/50 transition-colors">
               <td class="px-4 py-3 text-sm font-medium text-warm-800">#{{ order.order_no }}</td>
               <td class="px-4 py-3">
                 <div class="text-sm font-medium text-warm-800">{{ order.customer_name }}</div>
@@ -108,35 +156,18 @@
               <td class="px-4 py-3 text-sm font-semibold text-warm-800">${{ formatPrice(order.total_clp) }}</td>
               <td class="px-4 py-3 text-sm text-warm-500">{{ formatDate(order.created_at) }}</td>
               <td class="px-4 py-3 text-right">
-                <button
-                  class="inline-flex items-center gap-1 text-sm font-medium text-warm-600 hover:text-warm-800 mr-3 transition-colors"
-                  @click="openDetailModal(order)"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                  Ver
-                </button>
-                <button
-                  class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700 mr-3 transition-colors"
-                  @click="openStatusModal(order)"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                  </svg>
-                  Estado
-                </button>
-                <button
-                  v-if="order.status !== 'CANCELLED' && order.status !== 'DELIVERED'"
-                  class="inline-flex items-center gap-1 text-sm font-medium text-error-600 hover:text-error-700 transition-colors"
-                  @click="openCancelDialog(order)"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                  Cancelar
-                </button>
+                <div class="relative inline-block text-left" @click.stop>
+                  <button
+                    type="button"
+                    class="p-2 text-warm-500 hover:text-warm-800 hover:bg-warm-100 rounded-lg transition-colors"
+                    aria-label="Acciones"
+                    @click="toggleActionsMenu(order.id, $event)"
+                  >
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
+                    </svg>
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -144,8 +175,8 @@
       </div>
 
       <!-- Mobile Cards -->
-      <div v-if="filteredOrders.length > 0" class="sm:hidden space-y-3">
-        <div v-for="order in filteredOrders" :key="order.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
+      <div v-if="sortedOrders.length > 0" class="sm:hidden space-y-3">
+        <div v-for="order in sortedOrders" :key="order.id" class="bg-white rounded-xl p-4 shadow-soft border border-warm-100">
           <div class="flex items-start justify-between">
             <div>
               <p class="font-semibold text-warm-800">#{{ order.order_no }}</p>
@@ -165,40 +196,73 @@
             <p class="font-semibold text-primary-600">${{ formatPrice(order.total_clp) }}</p>
             <p class="text-xs text-warm-400">{{ formatDate(order.created_at) }}</p>
           </div>
-          <div class="flex items-center gap-2 mt-3">
+          <div class="flex items-center justify-end mt-3 relative" @click.stop>
             <button
-              class="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-warm-700 bg-warm-50 hover:bg-warm-100 rounded-lg transition-colors"
-              @click="openDetailModal(order)"
+              type="button"
+              class="p-2 text-warm-500 hover:text-warm-800 hover:bg-warm-100 rounded-lg transition-colors"
+              aria-label="Acciones"
+              @click="toggleActionsMenu(order.id, $event)"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
               </svg>
-              Ver
-            </button>
-            <button
-              class="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
-              @click="openStatusModal(order)"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-              </svg>
-              Estado
-            </button>
-            <button
-              v-if="order.status !== 'CANCELLED' && order.status !== 'DELIVERED'"
-              class="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-error-600 bg-error-50 hover:bg-error-100 rounded-lg transition-colors"
-              @click="openCancelDialog(order)"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-              </svg>
-              Cancelar
             </button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Menú de acciones (Ver / Editar / Estado / Imprimir / Cancelar) —
+         único para desktop y mobile, teleportado a body y posicionado
+         `fixed` desde el botón que lo abrió (ver toggleActionsMenu). -->
+    <Teleport to="body">
+      <div
+        v-if="openMenuOrder"
+        class="fixed z-40 w-48 bg-white border border-warm-200 rounded-xl shadow-lg py-1"
+        :style="{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors"
+          @click="openDetailModal(openMenuOrder); openMenuId = null"
+        >
+          <span>👁️</span> Ver
+        </button>
+        <button
+          v-if="canEdit && openMenuOrder.status !== 'CANCELLED'"
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="loadingEditDetail"
+          @click="openEditModal(openMenuOrder); openMenuId = null"
+        >
+          <span>✏️</span> {{ loadingEditDetail ? 'Cargando...' : 'Editar' }}
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 transition-colors"
+          @click="openStatusModal(openMenuOrder); openMenuId = null"
+        >
+          <span>🔄</span> Estado
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="printingOrderId === openMenuOrder.id"
+          @click="printOrder(openMenuOrder); openMenuId = null"
+        >
+          <span>🖨️</span> {{ printingOrderId === openMenuOrder.id ? 'Generando...' : 'Imprimir' }}
+        </button>
+        <button
+          v-if="openMenuOrder.status !== 'CANCELLED' && openMenuOrder.status !== 'DELIVERED'"
+          type="button"
+          class="w-full flex items-center gap-2 px-4 py-2 text-sm text-error-600 hover:bg-error-50 transition-colors"
+          @click="openCancelDialog(openMenuOrder); openMenuId = null"
+        >
+          <span>🗑️</span> Cancelar
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Create Order Panel -->
     <SidePanel
@@ -208,6 +272,16 @@
       @submit="handleCreateOrder"
     >
       <OrderForm ref="orderFormRef" @submit="handleSubmitOrder" />
+    </SidePanel>
+
+    <!-- Edit Order Panel (SUPERADMIN/ADMIN only — ver canEdit) -->
+    <SidePanel
+      v-model="showEditModal"
+      title="Editar Orden"
+      :loading="saving"
+      @submit="handleUpdateOrder"
+    >
+      <OrderForm ref="editFormRef" :order="editingOrder" :order-items="editingOrderItems" @submit="handleSubmitEditOrder" />
     </SidePanel>
 
     <!-- Update Order Status Modal -->
@@ -246,7 +320,14 @@
       :loading="cancelling"
       @confirm="handleCancelOrder"
     />
-  </div>
+
+    <NoticeDialog
+      v-model="showNotice"
+      :variant="noticeVariant"
+      :message="noticeMessage"
+    />
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -290,6 +371,114 @@ const detailError = ref('')
 const orderToCancel = ref<Order | null>(null)
 const searchQuery = ref('')
 
+// NoticeDialog — mismo patrón que plantilla-costo.vue/motor-tarifa.vue,
+// feedback de éxito/error para las acciones que actualizan algo.
+const showNotice = ref(false)
+const noticeVariant = ref<'success' | 'error'>('success')
+const noticeMessage = ref('')
+
+// Rol — igual patrón que currentUserRole/canWrite en supplies.vue: se lee
+// una vez de localStorage('user') en onMounted, ADMIN/SUPERADMIN pueden
+// editar la orden completa, STAFF solo puede cambiar el estado.
+const currentUserRole = ref('')
+const canEdit = computed(() => currentUserRole.value === 'SUPERADMIN' || currentUserRole.value === 'ADMIN')
+
+// Menú de acciones por fila (Ver / Editar / Estado / Imprimir / Cancelar) —
+// un solo dropdown abierto a la vez, identificado por el id de la orden.
+// El contenedor de la tabla desktop usa `overflow-hidden` (para redondear
+// las esquinas), así que un dropdown posicionado `absolute` ahí adentro
+// queda recortado por ese mismo contenedor en vez de flotar por encima —
+// se nota sobre todo con pocas filas. Se resuelve con Teleport a `body` +
+// posición `fixed` calculada desde el botón que lo abrió.
+const openMenuId = ref<string | null>(null)
+const menuPosition = ref({ top: 0, left: 0 })
+const openMenuOrder = computed(() => sortedOrders.value.find(o => o.id === openMenuId.value) || null)
+
+const toggleActionsMenu = (orderId: string, event: MouseEvent) => {
+  if (openMenuId.value === orderId) {
+    openMenuId.value = null
+    return
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const menuWidth = 192 // w-48
+  menuPosition.value = {
+    top: rect.bottom + 4,
+    left: Math.max(8, rect.right - menuWidth)
+  }
+  openMenuId.value = orderId
+}
+const closeActionsMenu = () => {
+  openMenuId.value = null
+}
+
+// Imprimir boleta (Frontend/dulcemaria-web/public/boleta-template.html) —
+// trae el detalle completo de la orden, lo deja en sessionStorage y abre la
+// plantilla en una pestaña nueva. La plantilla lee sessionStorage sola al
+// cargar (ver loadOrderDataIfPresent ahí) — acá no se toca su DOM ni su
+// lógica de impresión/medidas de papel.
+const printingOrderId = ref<string | null>(null)
+
+const printOrder = async (order: Order) => {
+  printingOrderId.value = order.id
+  try {
+    const res = await api.get<{ ok: boolean; order: any; items: any[] }>(`/admin/orders/${order.id}`)
+    if (!res.ok) return
+
+    const o = res.order
+    const items = (res.items || []).map((it: any) => {
+      let toppingsText = ''
+      try {
+        const toppings = it.selected_toppings ? JSON.parse(it.selected_toppings) : []
+        if (toppings.length > 0) {
+          toppingsText = ' + ' + toppings.map((t: any) => t.name).join(', + ')
+        }
+      } catch {}
+      const variantText = it.variant_name ? ` (${it.variant_name})` : ''
+      return {
+        description: `${it.product_name_snapshot}${variantText}${toppingsText}`,
+        quantity: it.qty,
+        unitPrice: it.unit_price_clp
+      }
+    })
+
+    const createdAt = new Date(o.created_at)
+    const printData = {
+      boleta: {
+        number: String(o.order_no).padStart(6, '0'),
+        date: createdAt.toLocaleDateString('es-CL'),
+        time: createdAt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        barcode: String(o.order_no).padStart(6, '0')
+      },
+      items,
+      totals: {
+        subtotal: o.subtotal_clp,
+        deliveryFee: o.delivery_fee_clp,
+        discount: o.discount_amount_clp,
+        total: o.total_clp
+      }
+    }
+
+    sessionStorage.setItem('boleta_print_data', JSON.stringify(printData))
+    window.open('/boleta-template.html', '_blank')
+  } catch (e: any) {
+    console.error('Error preparing print:', e)
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al preparar la impresión'
+    showNotice.value = true
+  } finally {
+    printingOrderId.value = null
+  }
+}
+
+// Edición de orden completa (PUT /admin/orders/:id) — el padre trae la
+// cabecera + items con GET /admin/orders/:id antes de abrir el panel;
+// OrderForm no hace su propio fetch de detalle.
+const editingOrder = ref<any>(null)
+const editingOrderItems = ref<any[]>([])
+const showEditModal = ref(false)
+const loadingEditDetail = ref(false)
+const editFormRef = ref<any>(null)
+
 const filteredOrders = computed(() => {
   if (!searchQuery.value) return orders.value
   const query = searchQuery.value.toLowerCase()
@@ -300,6 +489,59 @@ const filteredOrders = computed(() => {
     formatStatus(o.status).toLowerCase().includes(query) ||
     formatPaymentStatus(o.payment_status).toLowerCase().includes(query)
   )
+})
+
+// Filtro externo de rango de fechas — client-side, sobre la lista ya
+// filtrada por búsqueda. Todo se trae de una vez con GET /admin/orders
+// (sin límite), así que no hay ida y vuelta al backend por este filtro.
+const dateFrom = ref('')
+const dateTo = ref('')
+
+const dateFilteredOrders = computed(() => {
+  if (!dateFrom.value && !dateTo.value) return filteredOrders.value
+
+  const fromTs = dateFrom.value ? new Date(`${dateFrom.value}T00:00:00`).getTime() : null
+  const toTs = dateTo.value ? new Date(`${dateTo.value}T23:59:59`).getTime() : null
+
+  return filteredOrders.value.filter(o => {
+    const t = new Date(o.created_at).getTime()
+    if (fromTs !== null && t < fromTs) return false
+    if (toTs !== null && t > toTs) return false
+    return true
+  })
+})
+
+// Orden por click en encabezado — primer click en una columna ordena
+// DESCENDENTE, un segundo click en la MISMA columna alterna a ASCENDENTE.
+// Default: ordenado por fecha de creación descendente (el más reciente primero).
+const sortColumn = ref<'customer_name' | 'status' | 'payment_status' | 'total_clp' | 'created_at'>('created_at')
+const sortDirection = ref<'asc' | 'desc'>('desc')
+
+const toggleSort = (column: typeof sortColumn.value) => {
+  if (sortColumn.value === column) {
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortColumn.value = column
+    sortDirection.value = 'desc'
+  }
+}
+
+// Comparador "base" ya en orden DESCENDENTE (para que el default de la
+// página — created_at desc — no necesite ninguna inversión); si
+// sortDirection es 'asc' se invierte multiplicando por -1.
+const compareOrdersDesc = (a: Order, b: Order, column: typeof sortColumn.value) => {
+  if (column === 'total_clp') return b.total_clp - a.total_clp
+  if (column === 'created_at') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  return String(b[column] ?? '').localeCompare(String(a[column] ?? ''))
+}
+
+const sortedOrders = computed(() => {
+  const list = [...dateFilteredOrders.value]
+  list.sort((a, b) => {
+    const cmp = compareOrdersDesc(a, b, sortColumn.value)
+    return sortDirection.value === 'asc' ? cmp * -1 : cmp
+  })
+  return list
 })
 
 const formatPrice = (price: number) => {
@@ -388,17 +630,67 @@ const handleCreateOrder = () => {
 const handleSubmitOrder = async (data: any) => {
   try {
     saving.value = true
-    error.value = ''
 
     const response = await api.post<{ ok: boolean; order: Order }>('/admin/orders', data)
 
     if (response.ok && response.order) {
       await loadOrders()
       showCreateModal.value = false
+      noticeVariant.value = 'success'
+      noticeMessage.value = 'Orden creada correctamente.'
+      showNotice.value = true
     }
   } catch (e: any) {
     console.error('Error creating order:', e)
-    error.value = e?.data?.error || 'Error al crear la orden'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al crear la orden'
+    showNotice.value = true
+  } finally {
+    saving.value = false
+  }
+}
+
+const openEditModal = async (order: Order) => {
+  loadingEditDetail.value = true
+  try {
+    const res = await api.get<{ ok: boolean; order: any; items: any[] }>(`/admin/orders/${order.id}`)
+    if (res.ok) {
+      editingOrder.value = res.order
+      editingOrderItems.value = res.items
+      showEditModal.value = true
+    }
+  } catch (e: any) {
+    console.error('Error loading order for edit:', e)
+    error.value = e?.data?.error || 'Error al cargar la orden para editar'
+  } finally {
+    loadingEditDetail.value = false
+  }
+}
+
+const handleUpdateOrder = () => {
+  editFormRef.value?.submit()
+}
+
+const handleSubmitEditOrder = async (payload: any) => {
+  if (!editingOrder.value) return
+
+  try {
+    saving.value = true
+
+    await api.put(`/admin/orders/${editingOrder.value.id}`, payload)
+
+    showEditModal.value = false
+    editingOrder.value = null
+    editingOrderItems.value = []
+    await loadOrders()
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Orden actualizada correctamente.'
+    showNotice.value = true
+  } catch (e: any) {
+    console.error('Error updating order:', e)
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar la orden'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -418,7 +710,6 @@ const handleSubmitStatus = async (data: any) => {
 
   try {
     saving.value = true
-    error.value = ''
 
     await api.patch(`/admin/orders/${selectedOrder.value.id}/status`, {
       status: data.status
@@ -431,9 +722,14 @@ const handleSubmitStatus = async (data: any) => {
     await loadOrders()
     showStatusModal.value = false
     selectedOrder.value = null
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Estado actualizado correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     console.error('Error updating order status:', e)
-    error.value = e?.data?.error || 'Error al actualizar el estado'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al actualizar el estado'
+    showNotice.value = true
   } finally {
     saving.value = false
   }
@@ -483,7 +779,6 @@ const handleCancelOrder = async () => {
 
   try {
     cancelling.value = true
-    error.value = ''
 
     await api.patch(`/admin/orders/${orderToCancel.value.id}/status`, {
       status: 'CANCELLED'
@@ -492,9 +787,14 @@ const handleCancelOrder = async () => {
     await loadOrders()
     showCancelDialog.value = false
     orderToCancel.value = null
+    noticeVariant.value = 'success'
+    noticeMessage.value = 'Orden cancelada correctamente.'
+    showNotice.value = true
   } catch (e: any) {
     console.error('Error cancelling order:', e)
-    error.value = e?.data?.error || 'Error al cancelar la orden'
+    noticeVariant.value = 'error'
+    noticeMessage.value = e?.data?.error || 'Error al cancelar la orden'
+    showNotice.value = true
   } finally {
     cancelling.value = false
   }
@@ -509,6 +809,28 @@ const handleSearch = () => {
 }
 
 onMounted(() => {
+  try {
+    const userStr = localStorage.getItem('user')
+    if (userStr) {
+      currentUserRole.value = JSON.parse(userStr)?.role || ''
+    }
+  } catch (e) {}
+
   loadOrders()
+
+  // Cierra el menú de acciones al hacer click afuera. Los wrappers del botón
+  // ⋮ y su dropdown usan @click.stop, así que este listener solo dispara
+  // para clicks realmente fuera de cualquier menú abierto.
+  document.addEventListener('click', closeActionsMenu)
+  // El dropdown es `position: fixed` (Teleport a body) para escapar del
+  // overflow-hidden de la tabla — si se hace scroll sin cerrarlo, queda
+  // flotando lejos del botón que lo abrió. `capture: true` para agarrar
+  // también el scroll de contenedores internos, no solo el de window.
+  window.addEventListener('scroll', closeActionsMenu, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeActionsMenu)
+  window.removeEventListener('scroll', closeActionsMenu, true)
 })
 </script>

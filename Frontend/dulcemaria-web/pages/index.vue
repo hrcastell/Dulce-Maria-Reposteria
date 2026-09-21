@@ -1,25 +1,29 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center">
-    <div class="text-center">
-      <h1 class="text-5xl font-bold text-primary-600 mb-4">
+  <PageContainer>
+    <div class="text-center py-12 sm:py-16">
+      <h1 class="text-2xl sm:text-4xl font-bold text-primary-600 mb-4">
         🍰 Dulce María Repostería
       </h1>
-      <p class="text-xl text-gray-600 mb-8">
+      <p class="text-xl text-warm-600 mb-8">
         Sistema de Gestión
       </p>
-      <div class="space-x-4">
-        <NuxtLink to="/login" class="btn-primary inline-block">
+      <div class="flex flex-wrap justify-center gap-3">
+        <NuxtLink to="/login" class="btn-primary">
           Iniciar Sesión
         </NuxtLink>
-        <NuxtLink to="/catalog" class="btn-secondary inline-block">
+        <NuxtLink to="/catalog" class="btn-secondary">
           Ver Catálogo
         </NuxtLink>
       </div>
     </div>
-  </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout: 'public'
+})
+
 useHead({
   title: 'Inicio'
 })

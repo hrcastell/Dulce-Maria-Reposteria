@@ -82,6 +82,7 @@ Click en **"Add Variable"** para cada una:
 | `BOOTSTRAP_TOKEN` | `secreto-bootstrap-456` | **OPCIONAL** - Solo si vas a usar /auth/bootstrap |
 | `FRONTEND_URL` | `https://hrcastell.com` | **OPCIONAL** - Para CORS, sin barra final |
 | `PORT` | `3000` | **OPCIONAL** - O el puerto que uses |
+| `PLATFORM_OWNER_EMAIL` | `tu_email@dominio.com` | Email que ve el **Motor de Tarifa** (`/admin/platform-fees/*`) — nunca el dueño de la panadería, aunque sea SUPERADMIN. Distinta de `ADMIN_EMAIL` a propósito (esa es solo para el bootstrap). Si no se setea, el Motor de Tarifa queda inaccesible para todos. |
 
 **Nota:** Si ya tienes el usuario SUPERADMIN creado, puedes omitir `BOOTSTRAP_TOKEN`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 
