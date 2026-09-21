@@ -121,7 +121,7 @@
                     
                     <div class="mt-2 flex items-center justify-between text-sm">
                       <div class="text-warm-500">
-                        <span class="block">Trae: <span class="text-warm-700 font-medium">{{ s.reference_qty }} {{ s.unit || 'unidad' }}</span></span>
+                        <span class="block">Presentación: <span class="text-warm-700 font-medium">{{ s.reference_qty }} {{ s.unit || 'unidad' }}</span></span>
                         <span class="block">Stock: <span class="text-warm-700 font-medium">{{ s.stock_qty }} {{ s.unit || '' }}</span></span>
                         <span class="block mt-0.5 text-xs">
                           {{ s.last_updated ? formatDate(s.last_updated) : '—' }}
@@ -429,17 +429,28 @@
         </div>
 
         <div class="p-3 bg-warm-50 rounded-xl border border-warm-100">
-          <p class="text-xs font-medium text-warm-600 mb-2">¿Cómo lo comprás? — ej: una bandeja trae 30 huevos</p>
+          <p class="text-xs font-medium text-warm-600 mb-1">Unidad base del insumo</p>
+          <p class="text-xs text-warm-500 mb-2">
+            En qué unidad llevás el stock de este insumo — ej. gramos para harina o carne, mililitros para leche,
+            unidad para huevos o rollos de papel film. Para pesos y volúmenes, conviene elegir la unidad chica
+            (gramos, mililitros): te da más precisión al recetear.
+          </p>
           <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="label text-xs">Trae (cantidad)</label>
-              <input v-model.number="supplyForm.reference_qty" type="number" min="0.001" step="any" class="input" placeholder="30">
-            </div>
             <div>
               <label class="label text-xs">Unidad</label>
               <select v-model="supplyForm.unit" class="input">
                 <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
               </select>
+            </div>
+            <div>
+              <label class="label text-xs flex items-center gap-1">
+                Presentación de referencia
+                <span
+                  class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
+                  title="Solo se usa para calcular el precio por unidad de abajo — ej. una bandeja de huevos contiene 30 unidades. No es una compra real: el detalle de cada compra se carga en Gastos."
+                >ⓘ</span>
+              </label>
+              <input v-model.number="supplyForm.reference_qty" type="number" min="0.001" step="any" class="input" placeholder="30">
             </div>
           </div>
         </div>
@@ -450,7 +461,7 @@
         </div>
 
         <div v-if="supplyUnitPrice !== null" class="flex items-center justify-between px-3 py-2 bg-primary-50 rounded-xl border border-primary-100">
-          <span class="text-sm text-warm-600">Precio por {{ supplyForm.unit || 'unidad' }}</span>
+          <span class="text-sm text-warm-600">Precio por {{ unitLabel(supplyForm.unit) }}</span>
           <span class="text-sm font-bold text-warm-800">${{ formatPrice(supplyUnitPrice) }}</span>
         </div>
 
@@ -560,7 +571,7 @@
               Unidad de compra *
               <span
                 class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
-                title="Elegí la unidad directa (Gramos, Kilogramos, Mililitros, Litros) si compraste a granel. Elegí 'Unidad' si compraste por paquete, saco o bandeja cerrada — ej. un paquete de canela o un saco de harina — para después indicar cuánto pesa o mide cada uno."
+                title="Elegí la unidad directa (Gramos, Kilogramos, Mililitros, Litros) si compraste a granel — ej. 3 kilos de carne. Elegí 'Unidad' si compraste por paquete, saco, bandeja o caja cerrada — ej. un paquete de canela, un saco de harina, o una caja de leche con varios cartones adentro — para después indicar la presentación de cada una."
               >ⓘ</span>
             </label>
             <select v-model="draftExpenseItem.unit" class="input">
@@ -573,14 +584,15 @@
           </div>
         </div>
 
-        <!-- Contenido neto — solo cuando se compra por unidad discreta (paquete, saco,
-             bandeja...), para poder distinguir "2 paquetes de 250g" de "2 gramos". -->
+        <!-- Presentación de esta compra — solo cuando se compra por unidad discreta
+             (paquete, saco, bandeja, caja...), para poder distinguir "2 paquetes de
+             250g" de "2 gramos". -->
         <div v-if="draftExpenseItem.unit === 'unidad'" class="p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
           <label class="label flex items-center gap-1">
-            Contenido neto por unidad comprada (opcional)
+            Presentación de esta compra: ¿qué trae cada unidad? (opcional)
             <span
               class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
-              title="Cuánto pesa o mide CADA unidad comprada — ej. 250 / Gramos para un paquete de canela de 250 g, o 25 / Kilogramos para un saco de harina de 25 kg. Si lo dejás vacío, el sistema asume que 1 unidad comprada = 1 unidad de stock (correcto para insumos que se cuentan de a uno, como huevos)."
+              title="Cuánto pesa o mide CADA unidad comprada — ej. 250 / Gramos para un paquete de canela de 250 g, o 25 / Kilogramos para un saco de harina de 25 kg. Para una caja de leche con 12 cartones de 1 litro, no cargues cada cartón: poné directamente 12 / Litros (el total de la caja). Si lo dejás vacío, el sistema asume que 1 unidad comprada = 1 unidad de stock (correcto para insumos que se cuentan de a uno, como huevos)."
             >ⓘ</span>
           </label>
           <div class="grid grid-cols-2 gap-3">
@@ -589,7 +601,11 @@
               <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
             </select>
           </div>
-          <p class="text-xs text-warm-500">Ej: si cada paquete pesa 250 g, poné 250 / Gramos. Si lo dejás vacío, cada unidad comprada suma 1 al stock del insumo.</p>
+          <p class="text-xs text-warm-500">
+            Ej: paquete de 250 g de canela → 250 / Gramos. Caja de leche con 12 litros en total → 12 / Litros.
+            4 bolsas de fondant de 500 g → cantidad comprada 4, y acá 500 / Gramos.
+            Si lo dejás vacío, cada unidad comprada suma 1 al stock del insumo.
+          </p>
 
           <!-- Gate de confirmación: se arma en confirmExpenseItemModal() cuando se
                intenta guardar sin contenido neto para un insumo que no se cuenta de
@@ -666,6 +682,7 @@ const UNIT_OPTIONS = [
   { value: 'l', label: 'Litros (l)' },
   { value: 'unidad', label: 'Unidad' },
 ]
+const unitLabel = (code: string) => UNIT_OPTIONS.find((u) => u.value === code)?.label || code || 'Unidad'
 
 // ── Supplies ─────────────────────────────────────────────────────────────────
 const supplies = ref<any[]>([])
@@ -709,6 +726,10 @@ const months = [
 ]
 
 const formatPrice = (n: number) => new Intl.NumberFormat('es-CL').format(Math.round(n))
+// A diferencia de formatPrice (CLP, siempre entero), cantidades/contenidos
+// pueden venir con decimales (step 0.001) — redondear a entero acá mostraría
+// "3" en vez de "2.5 kg".
+const formatQty = (n: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 3 }).format(n)
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('es-CL')
 const unitPriceFor = (s: any) => (s.last_price_clp && s.reference_qty ? s.last_price_clp / s.reference_qty : 0)
 const isPriceStale = (iso: string) => {
@@ -880,15 +901,22 @@ const itemStockPreview = (item: DraftExpenseItem): string => {
   const supply = allSupplies.value.find((s) => s.id === item.supply_id)
   const supplyUnit = supply?.unit || item.unit
   let amount: number | null
+  let formula = ''
   if (item.unit === 'unidad' && item.content_qty && item.content_unit) {
     const content = previewConvert(item.content_qty, item.content_unit, supplyUnit)
     amount = content == null ? null : item.quantity * content
+    formula = `${formatQty(item.quantity)} × ${formatQty(item.content_qty)} ${item.content_unit} = `
   } else {
     amount = previewConvert(item.quantity, item.unit, supplyUnit)
   }
-  if (amount == null) return 'Unidad incompatible con el insumo'
-  const label = UNIT_OPTIONS.find((u) => u.value === supplyUnit)?.label || supplyUnit
-  return `${formatPrice(amount)} ${label}`
+  if (amount == null) {
+    // La presentación de esta compra no se puede convertir a la unidad base
+    // del insumo (ej. gramos vs. unidad) — no son la misma dimensión
+    // (peso/volumen/conteo). Se apunta a dónde arreglarlo, no solo que falló.
+    return `Unidad incompatible con la unidad base del insumo (revisá "${supply?.name || item.product_name}" en la pestaña Insumos)`
+  }
+  const label = unitLabel(supplyUnit)
+  return `${formula}${formatQty(amount)} ${label}`
 }
 
 const expenses = ref<any[]>([])
