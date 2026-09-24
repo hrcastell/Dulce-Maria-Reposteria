@@ -293,7 +293,7 @@
                 <div v-for="(item, index) in newExpense.items" :key="item._key" class="flex items-center justify-between gap-3 bg-warm-50 px-3 py-2.5 rounded-xl border border-warm-100">
                   <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium text-warm-800 truncate">{{ item.product_name }}</p>
-                    <p class="text-xs text-warm-500">{{ item.quantity }} x ${{ formatPrice(item.unit_price_clp) }}</p>
+                    <p class="text-xs text-warm-500">{{ describeItemQuantity(item) }}</p>
                   </div>
                   <p class="text-sm font-semibold text-warm-800 flex-shrink-0">${{ formatPrice(item.total_clp) }}</p>
                   <div class="flex items-center gap-1 flex-shrink-0">
@@ -483,7 +483,7 @@
     <SidePanel
       v-model="showExpenseItemModal"
       :title="editingExpenseItemIndex === null ? 'Agregar Producto al Detalle' : 'Editar Producto'"
-      :submit-text="noContentAcknowledged ? (editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así') : 'Aceptar'"
+      submit-text="Aceptar"
       @submit="confirmExpenseItemModal"
     >
       <div class="space-y-4">
@@ -561,74 +561,46 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label class="label">Cantidad comprada *</label>
-            <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="0.001" class="input">
-          </div>
-          <div>
-            <label class="label flex items-center gap-1">
-              Unidad de compra *
-              <span
-                class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
-                title="Elegí la unidad directa (Gramos, Kilogramos, Mililitros, Litros) si compraste a granel — ej. 3 kilos de carne. Elegí 'Unidad' si compraste por paquete, saco, bandeja o caja cerrada — ej. un paquete de canela, un saco de harina, o una caja de leche con varios cartones adentro — para después indicar la presentación de cada una."
-              >ⓘ</span>
-            </label>
-            <select v-model="draftExpenseItem.unit" class="input">
-              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="label">Precio por unidad de compra (CLP, c/IVA) *</label>
-            <input v-model.number="draftExpenseItem.unit_price_clp" type="number" min="0" class="input">
-          </div>
-        </div>
-
-        <!-- Presentación de esta compra — solo cuando se compra por unidad discreta
-             (paquete, saco, bandeja, caja...), para poder distinguir "2 paquetes de
-             250g" de "2 gramos". -->
-        <div v-if="draftExpenseItem.unit === 'unidad'" class="p-3 bg-warm-50 rounded-xl border border-warm-200 space-y-2">
-          <label class="label flex items-center gap-1">
-            Presentación de esta compra: ¿qué trae cada unidad? (opcional)
-            <span
-              class="text-warm-400 hover:text-warm-600 cursor-help text-xs leading-none"
-              title="Cuánto pesa o mide CADA unidad comprada — ej. 250 / Gramos para un paquete de canela de 250 g, o 25 / Kilogramos para un saco de harina de 25 kg. Para una caja de leche con 12 cartones de 1 litro, no cargues cada cartón: poné directamente 12 / Litros (el total de la caja). Si lo dejás vacío, el sistema asume que 1 unidad comprada = 1 unidad de stock (correcto para insumos que se cuentan de a uno, como huevos)."
-            >ⓘ</span>
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <input v-model.number="draftExpenseItem.content_qty" type="number" min="0.001" step="0.001" class="input" placeholder="Ej: 250">
-            <select v-model="draftExpenseItem.content_unit" class="input">
-              <option v-for="u in UNIT_OPTIONS" :key="u.value" :value="u.value">{{ u.label }}</option>
-            </select>
-          </div>
+        <!-- Mismo esquema que el modal de Insumo: cantidad TOTAL + unidad + lo que
+             se pagó por todo; el sistema calcula el precio por unidad. Así el
+             usuario copia lo que dice la factura sin hacer cuentas. -->
+        <div class="p-3 bg-warm-50 rounded-xl border border-warm-100 space-y-3">
           <p class="text-xs text-warm-500">
-            Ej: paquete de 250 g de canela → 250 / Gramos. Caja de leche con 12 litros en total → 12 / Litros.
-            4 bolsas de fondant de 500 g → cantidad comprada 4, y acá 500 / Gramos.
-            Si lo dejás vacío, cada unidad comprada suma 1 al stock del insumo.
+            Poné la cantidad <strong>total</strong> que entra al inventario y lo que pagaste por todo eso.
+            Ej: una bandeja de 30 huevos a $7.000 → 30 Unidad y $7.000.
+            2 sacos de harina de 25 kg a $15.000 c/u → 50 Kilogramos y $30.000.
           </p>
 
-          <!-- Gate de confirmación: se arma en confirmExpenseItemModal() cuando se
-               intenta guardar sin contenido neto para un insumo que no se cuenta de
-               a uno — obliga a un segundo click para evitar repetir el bug original
-               (paquete de 250g contado por descuido como 1 unidad de stock). -->
-          <div v-if="noContentAcknowledged" class="mt-2 p-2.5 bg-warning-50 border border-warning-100 rounded-lg text-xs text-warning-700 space-y-1">
-            <p>
-              No especificaste el contenido neto de <strong>"{{ draftExpenseItem.product_name }}"</strong> —
-              se va a sumar 1 unidad exacta al stock.
-            </p>
-            <p>¿Es correcto? Hacé clic de nuevo en "{{ editingExpenseItemIndex === null ? 'Sí, agregar así' : 'Sí, guardar así' }}" para confirmar, o completá el contenido neto arriba si no lo es.</p>
+          <div v-if="draftExpenseItem._importHint" class="text-xs text-warm-600 bg-white rounded-lg border border-warm-200 px-2.5 py-1.5">
+            En la factura: {{ draftExpenseItem._importHint }}
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label text-xs">Unidad</label>
+              <select v-model="draftExpenseItem.unit" class="input" :disabled="!draftExpenseItem.supply_id">
+                <option v-for="u in unitOptionsForDraft" :key="u.value" :value="u.value">{{ u.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="label text-xs">Cantidad total comprada *</label>
+              <input v-model.number="draftExpenseItem.quantity" type="number" min="0.001" step="any" class="input" placeholder="30">
+            </div>
+          </div>
+
+          <div>
+            <label class="label text-xs">Total pagado por esa cantidad (CLP, c/IVA) *</label>
+            <input v-model.number="draftExpenseItem.total_paid_clp" type="number" min="0" class="input" placeholder="7000">
           </div>
         </div>
 
-        <p class="text-xs text-warm-500">Ej: si compraste 10 kg sueltos, poné cantidad 10 y unidad Kilogramos.</p>
-
         <div class="pt-3 border-t border-warm-100 space-y-1.5">
-          <div class="flex justify-between items-center text-sm">
-            <span class="text-warm-500">Total línea:</span>
-            <span class="font-bold text-warm-800">${{ formatPrice((draftExpenseItem.quantity || 0) * (draftExpenseItem.unit_price_clp || 0)) }}</span>
+          <div v-if="draftUnitPrice !== null" class="flex justify-between items-center text-sm">
+            <span class="text-warm-500">Precio por {{ unitLabel(draftExpenseItem.unit) }}:</span>
+            <span class="font-bold text-warm-800">${{ formatUnitPrice(draftUnitPrice) }}</span>
           </div>
           <div class="flex justify-between items-center text-sm">
-            <span class="text-warm-500">Suma a inventario:</span>
+            <span class="text-warm-500">Suma al inventario:</span>
             <span class="font-bold text-primary-700">{{ itemStockPreview(draftExpenseItem) }}</span>
           </div>
         </div>
@@ -843,14 +815,18 @@ interface ExpenseItem {
   content_unit: string | null
 }
 
+// El borrador se carga como en el modal de Insumo: cantidad TOTAL en una unidad
+// compatible con la del insumo + total pagado. Al confirmar se traduce al
+// payload del backend como "1 compra cuyo contenido neto es <cantidad> <unidad>"
+// (content_qty/content_unit), así el backend calcula stock y precio de
+// referencia sin redondear un precio unitario (ej. $0,85/g) a entero.
 interface DraftExpenseItem {
   supply_id: string
   product_name: string
   quantity: number | null
   unit: string
-  unit_price_clp: number | null
-  content_qty: number | null
-  content_unit: string
+  total_paid_clp: number | null
+  _importHint: string
   _supplySearch: string
   _searchResults: any[]
   _searchSeq: number
@@ -863,11 +839,10 @@ interface DraftExpenseItem {
 const createEmptyExpenseItem = (): DraftExpenseItem => ({
   supply_id: '',
   product_name: '',
-  quantity: 1,
+  quantity: null,
   unit: 'unidad',
-  unit_price_clp: null,
-  content_qty: null,
-  content_unit: 'g',
+  total_paid_clp: null,
+  _importHint: '',
   _supplySearch: '',
   _searchResults: [],
   _searchSeq: 0,
@@ -898,25 +873,58 @@ const previewConvert = (value: number, from: string, to: string): number | null 
 // efecto real ANTES de guardar, para no tener que hacer la cuenta de cabeza.
 const itemStockPreview = (item: DraftExpenseItem): string => {
   if (!item.supply_id || !item.quantity) return '—'
-  const supply = allSupplies.value.find((s) => s.id === item.supply_id)
-  const supplyUnit = supply?.unit || item.unit
-  let amount: number | null
-  let formula = ''
-  if (item.unit === 'unidad' && item.content_qty && item.content_unit) {
-    const content = previewConvert(item.content_qty, item.content_unit, supplyUnit)
-    amount = content == null ? null : item.quantity * content
-    formula = `${formatQty(item.quantity)} × ${formatQty(item.content_qty)} ${item.content_unit} = `
-  } else {
-    amount = previewConvert(item.quantity, item.unit, supplyUnit)
-  }
-  if (amount == null) {
-    // La presentación de esta compra no se puede convertir a la unidad base
-    // del insumo (ej. gramos vs. unidad) — no son la misma dimensión
-    // (peso/volumen/conteo). Se apunta a dónde arreglarlo, no solo que falló.
-    return `Unidad incompatible con la unidad base del insumo (revisá "${supply?.name || item.product_name}" en la pestaña Insumos)`
-  }
-  const label = unitLabel(supplyUnit)
-  return `${formula}${formatQty(amount)} ${label}`
+  const supplyUnit = supplyUnitFor(item.supply_id, item.unit)
+  const amount = previewConvert(item.quantity, item.unit, supplyUnit)
+  if (amount == null) return '—'
+  return `+${formatQty(amount)} ${unitLabel(supplyUnit)}`
+}
+
+// Insumos viejos pueden tener unidades legacy ("Kg", "gr", "unidades") — mismo
+// criterio que normalizeUnit() del backend.
+const UNIT_ALIASES: Record<string, string> = {
+  gr: 'g', grs: 'g', gramo: 'g', gramos: 'g',
+  kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
+  cc: 'ml', mililitro: 'ml', mililitros: 'ml',
+  lt: 'l', litro: 'l', litros: 'l',
+  unidades: 'unidad', un: 'unidad', u: 'unidad',
+}
+const normalizeUnit = (raw: string | null | undefined): string => {
+  const key = String(raw || '').trim().toLowerCase()
+  return UNIT_ALIASES[key] || key
+}
+
+const supplyUnitFor = (supplyId: string, fallback = 'unidad'): string =>
+  normalizeUnit(allSupplies.value.find((s) => s.id === supplyId)?.unit) || fallback
+
+// Solo unidades de la misma dimensión que el insumo (peso/volumen/conteo) — es
+// imposible elegir una combinación que el backend después rechace.
+const compatibleUnitOptions = (supplyUnit: string) => {
+  const dim = UNIT_TO_BASE[supplyUnit]?.dim
+  return dim ? UNIT_OPTIONS.filter((u) => UNIT_TO_BASE[u.value]?.dim === dim) : UNIT_OPTIONS
+}
+const unitOptionsForDraft = computed(() => {
+  const d = draftExpenseItem.value
+  return d.supply_id ? compatibleUnitOptions(supplyUnitFor(d.supply_id, d.unit)) : UNIT_OPTIONS
+})
+
+// Precio por unidad puede ser < $1 (ej. $0,85 por gramo) — no se redondea a entero.
+const formatUnitPrice = (n: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(n)
+const draftUnitPrice = computed(() => {
+  const d = draftExpenseItem.value
+  if (!d.quantity || d.quantity <= 0 || d.total_paid_clp == null) return null
+  return d.total_paid_clp / d.quantity
+})
+
+// Cantidad total real de un ítem guardado, en su unidad — cubre tanto el
+// formato nuevo (1 × contenido) como ítems viejos (N paquetes × contenido, o N sueltos).
+const itemTotalQuantity = (item: ExpenseItem): { qty: number; unit: string } =>
+  item.content_qty && item.content_unit
+    ? { qty: item.quantity * item.content_qty, unit: item.content_unit }
+    : { qty: item.quantity, unit: item.unit }
+
+const describeItemQuantity = (item: ExpenseItem): string => {
+  const { qty, unit } = itemTotalQuantity(item)
+  return `${formatQty(qty)} ${unitLabel(unit)} · $${formatUnitPrice(item.total_clp / qty)} c/u`
 }
 
 const expenses = ref<any[]>([])
@@ -941,20 +949,6 @@ const showExpenseItemModal = ref(false)
 const editingExpenseItemIndex = ref<number | null>(null)
 const draftExpenseItem = ref<DraftExpenseItem>(createEmptyExpenseItem())
 const expenseItemModalError = ref('')
-
-// Gate de confirmación para "Unidad de compra = Unidad" sin contenido neto (ver
-// confirmExpenseItemModal). Se re-arma en falso apenas cambia cualquier campo
-// relevante, para no dejar una confirmación vieja "colgada" tras editar algo.
-const noContentAcknowledged = ref(false)
-watch(
-  () => [
-    draftExpenseItem.value.unit,
-    draftExpenseItem.value.content_qty,
-    draftExpenseItem.value.content_unit,
-    draftExpenseItem.value.supply_id,
-  ],
-  () => { noContentAcknowledged.value = false }
-)
 
 // ── Importación de boleta/factura (foto/PDF/Excel) — ver components/ExpenseImportModal.vue ──
 // Cada línea detectada pasa, una a la vez, por el MISMO panel "Agregar Producto
@@ -1044,18 +1038,18 @@ const openImportedItem = (index: number) => {
   } else {
     draftExpenseItem.value._supplySearch = line.descripcion
   }
-  // El OCR nunca puede saber si la compra viene suelta (g/kg/ml/l) o por unidad
-  // discreta (paquete/saco) — arranca siempre en 'unidad' para forzar el gate de
-  // contenido neto existente, la misma red de seguridad del fix original.
-  draftExpenseItem.value.unit = 'unidad'
-  draftExpenseItem.value.quantity = line.cantidad && line.cantidad > 0 ? line.cantidad : 1
-  if (line.valorUnitario != null) {
-    draftExpenseItem.value.unit_price_clp = Math.round(line.valorUnitario)
-  } else if (line.total != null && line.cantidad) {
-    draftExpenseItem.value.unit_price_clp = Math.round(line.total / line.cantidad)
-  } else {
-    draftExpenseItem.value.unit_price_clp = null
-  }
+  // El OCR solo sabe cuántos bultos dice la factura (ej. "2 sacos"), no cuánto
+  // trae cada uno — se prellena el total pagado y se muestra la línea original
+  // para que el usuario corrija la cantidad a lo que realmente entra al stock.
+  const cantidad = line.cantidad && line.cantidad > 0 ? line.cantidad : 1
+  const total = line.total ?? (line.valorUnitario != null ? line.valorUnitario * cantidad : null)
+  draftExpenseItem.value.quantity = cantidad
+  draftExpenseItem.value.total_paid_clp = total != null ? Math.round(total) : null
+  draftExpenseItem.value._importHint = [
+    `"${line.descripcion}"`,
+    `${formatQty(cantidad)}${line.valorUnitario != null ? ` × $${formatPrice(line.valorUnitario)}` : ''}`,
+    total != null ? `= $${formatPrice(total)}` : '',
+  ].filter(Boolean).join(' ')
   showExpenseItemModal.value = true
 }
 
@@ -1225,16 +1219,15 @@ const filteredSuppliesFor = (item: DraftExpenseItem) => item._searchResults
 const selectSupplyForItem = (item: DraftExpenseItem, supply: any) => {
   item.supply_id = supply.id
   item.product_name = supply.name
-  item.unit = supply.unit || 'unidad'
+  item.unit = normalizeUnit(supply.unit) || 'unidad'
   item._supplySearch = ''
   item._searchResults = []
   item._showSupplyDropdown = false
   item._showCreateSupply = false
   item._createUnit = 'unidad'
-  const referenceUnitPrice = unitPriceFor(supply)
-  if (referenceUnitPrice && !item.unit_price_clp) {
-    item.unit_price_clp = Math.round(referenceUnitPrice)
-  }
+  // El insumo recién creado todavía no está en allSupplies — sin esto la
+  // unidad base (y las unidades compatibles) caerían al fallback.
+  if (!allSupplies.value.some((s) => s.id === supply.id)) allSupplies.value.push(supply)
 }
 
 const clearSupplySelection = (item: DraftExpenseItem) => {
@@ -1273,15 +1266,14 @@ const openEditExpenseItemModal = (index: number) => {
   importMode.value = false
   editingExpenseItemIndex.value = index
   const original = newExpense.value.items[index]
+  const { qty, unit } = itemTotalQuantity(original)
   draftExpenseItem.value = {
     ...createEmptyExpenseItem(),
     supply_id: original.supply_id,
     product_name: original.product_name,
-    quantity: original.quantity,
-    unit: original.unit || 'unidad',
-    unit_price_clp: original.unit_price_clp,
-    content_qty: original.content_qty ?? null,
-    content_unit: original.content_unit || 'g',
+    quantity: qty,
+    unit: unit || 'unidad',
+    total_paid_clp: original.total_clp,
   }
   expenseItemModalError.value = ''
   showExpenseItemModal.value = true
@@ -1301,38 +1293,30 @@ const confirmExpenseItemModal = () => {
     expenseItemModalError.value = 'La cantidad debe ser mayor a 0'
     return
   }
-  if (d.unit_price_clp == null || d.unit_price_clp < 0) {
-    expenseItemModalError.value = 'El precio unitario es requerido'
+  if (d.total_paid_clp == null || d.total_paid_clp < 0) {
+    expenseItemModalError.value = 'Ingresá el total pagado'
     return
   }
-
-  // Compra por unidad discreta sin contenido neto: puede ser intencional (insumos
-  // que se cuentan de a uno, ej. huevos) o un descuido — el bug original que este
-  // campo vino a corregir. Si el insumo no se cuenta de a uno, se exige un click
-  // extra de confirmación antes de guardar (ver banner "noContentAcknowledged").
-  const selectedSupply = allSupplies.value.find((s) => s.id === d.supply_id)
-  const needsNoContentAck = d.unit === 'unidad' && !d.content_qty && selectedSupply?.unit !== 'unidad'
-  if (needsNoContentAck && !noContentAcknowledged.value) {
-    expenseItemModalError.value = ''
-    noContentAcknowledged.value = true
+  if (previewConvert(d.quantity, d.unit, supplyUnitFor(d.supply_id, d.unit)) == null) {
+    expenseItemModalError.value = 'La unidad no es compatible con la del insumo'
     return
   }
-  noContentAcknowledged.value = false
 
   const existingKey = editingExpenseItemIndex.value !== null
     ? newExpense.value.items[editingExpenseItemIndex.value]._key
     : crypto.randomUUID()
-  const hasContent = d.unit === 'unidad' && !!d.content_qty && !!d.content_unit
+  const totalPaid = Math.round(d.total_paid_clp)
+  // "1 compra con contenido neto <cantidad> <unidad>" — ver DraftExpenseItem.
   const item: ExpenseItem = {
     _key: existingKey,
     supply_id: d.supply_id,
     product_name: d.product_name,
-    quantity: d.quantity,
-    unit: d.unit,
-    unit_price_clp: d.unit_price_clp,
-    total_clp: Math.round(d.quantity * d.unit_price_clp),
-    content_qty: hasContent ? d.content_qty : null,
-    content_unit: hasContent ? d.content_unit : null,
+    quantity: 1,
+    unit: 'unidad',
+    unit_price_clp: totalPaid,
+    total_clp: totalPaid,
+    content_qty: d.quantity,
+    content_unit: d.unit,
   }
   if (editingExpenseItemIndex.value !== null) {
     newExpense.value.items[editingExpenseItemIndex.value] = item
