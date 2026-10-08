@@ -4,26 +4,18 @@ const crypto = require("crypto");
 
 const { getPool } = require("../db");
 const { hashPassword } = require("../utils/password");
-const { requireRole } = require("../middleware/auth");
+const { requireRole, requirePlatformOwner } = require("../middleware/auth");
+const { isPlatformOwner } = require("../lib/platformOwner");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 
 const router = express.Router();
 
-const SUPER_ADMIN_EMAIL = "hernan.castellanos@hrcastell.com";
-
 // Middleware para verificar que solo el SUPERADMIN específico puede crear/modificar usuarios
-const requireSuperAdmin = (req, res, next) => {
-  if (req.user.email !== SUPER_ADMIN_EMAIL) {
-    return res.status(403).json({ ok: false, error: "Solo el administrador principal puede gestionar usuarios" });
-  }
-  next();
-};
-
 // Solo hernan.castellanos@hrcastell.com puede crear usuarios
-router.post("/", requireRole("SUPERADMIN"), requireSuperAdmin, async (req, res) => {
+router.post("/", requireRole("SUPERADMIN"), requirePlatformOwner, async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
-    password: z.string().min(8),
+    password: z.string().min(12).max(200),
     fullName: z.string().min(1).optional(),
     role: z.enum(["ADMIN", "STAFF"]).default("STAFF"),
     isActive: z.boolean().default(true),
@@ -100,14 +92,14 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
 });
 
 // Actualizar usuario
-router.patch("/:id", requireRole("SUPERADMIN"), requireSuperAdmin, validateUuidParam("id"), async (req, res) => {
+router.patch("/:id", requireRole("SUPERADMIN"), requirePlatformOwner, validateUuidParam("id"), async (req, res) => {
   const { id } = req.params;
 
   const schema = z.object({
     fullName: z.string().min(1).optional(),
     role: z.enum(["ADMIN", "STAFF"]).optional(),
     isActive: z.boolean().optional(),
-    password: z.string().min(8).optional(),
+    password: z.string().min(12).max(200).optional(),
     permissions: z.object({
       products: z.object({
         canCreate: z.boolean(),
@@ -143,7 +135,7 @@ router.patch("/:id", requireRole("SUPERADMIN"), requireSuperAdmin, validateUuidP
     if (exists.rowCount === 0) return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
 
     // No permitir modificar al SUPERADMIN principal
-    if (exists.rows[0].email === SUPER_ADMIN_EMAIL) {
+    if (isPlatformOwner(exists.rows[0].email)) {
       return res.status(403).json({ ok: false, error: "No se puede modificar el administrador principal" });
     }
 
@@ -188,7 +180,7 @@ router.patch("/:id", requireRole("SUPERADMIN"), requireSuperAdmin, validateUuidP
 });
 
 // Eliminar usuario
-router.delete("/:id", requireRole("SUPERADMIN"), requireSuperAdmin, validateUuidParam("id"), async (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN"), requirePlatformOwner, validateUuidParam("id"), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -198,7 +190,7 @@ router.delete("/:id", requireRole("SUPERADMIN"), requireSuperAdmin, validateUuid
     if (exists.rowCount === 0) return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
 
     // No permitir eliminar al SUPERADMIN principal
-    if (exists.rows[0].email === SUPER_ADMIN_EMAIL) {
+    if (isPlatformOwner(exists.rows[0].email)) {
       return res.status(403).json({ ok: false, error: "No se puede eliminar el administrador principal" });
     }
 

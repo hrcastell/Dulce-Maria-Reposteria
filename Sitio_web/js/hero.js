@@ -36,12 +36,14 @@ function renderHero(slides) {
       const path = imgUrl.startsWith('/') ? imgUrl : '/' + imgUrl;
       imgUrl = base + path;
     }
+    imgUrl = escapeHtml(safePublicUrl(imgUrl, ''));
+    const buttonHref = escapeHtml(safePublicUrl(slide.button_link || '#'));
 
     return `
       <div class="carousel-slide absolute inset-0 transition-opacity duration-700 ease-in-out opacity-0 z-0">
         <div class="relative h-full w-full">
           <!-- Background Image -->
-          <div class="absolute inset-0 bg-cover bg-center" style="background-image: url('${imgUrl}')"></div>
+          <div class="absolute inset-0 bg-cover bg-center" data-hero-bg="${imgUrl}"></div>
 
           <!-- Overlay -->
           <div class="absolute inset-0 bg-black/40"></div>
@@ -49,13 +51,13 @@ function renderHero(slides) {
           <!-- Content -->
           <div class="absolute inset-0 flex items-center justify-center">
             <div class="text-center px-4 max-w-4xl mx-auto">
-              ${slide.title ? `<h1 class="font-display text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-lg tracking-tight">${slide.title}</h1>` : ''}
-              ${slide.subtitle ? `<p class="font-body text-lg md:text-2xl text-white/90 mb-8 drop-shadow-md font-light">${slide.subtitle}</p>` : ''}
+              ${slide.title ? `<h1 class="font-display text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-lg tracking-tight">${escapeHtml(slide.title)}</h1>` : ''}
+              ${slide.subtitle ? `<p class="font-body text-lg md:text-2xl text-white/90 mb-8 drop-shadow-md font-light">${escapeHtml(slide.subtitle)}</p>` : ''}
 
               ${slide.button_text ? `
-                <a href="${slide.button_link || '#'}"
+                <a href="${buttonHref}"
                    class="inline-block bg-dm-pink text-dm-brown px-8 py-3 rounded-xl hover:bg-white transition-all duration-300 font-body font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5">
-                  ${slide.button_text}
+                  ${escapeHtml(slide.button_text)}
                 </a>
               ` : ''}
             </div>
@@ -92,6 +94,9 @@ function renderHero(slides) {
 
   // Inject content
   container.innerHTML = slidesHtml + controlsHtml + indicatorsHtml;
+  container.querySelectorAll('[data-hero-bg]').forEach((element) => {
+    element.style.backgroundImage = `url("${element.dataset.heroBg}")`;
+  });
 
   // Wire up carousel controls via event delegation
   container.addEventListener('click', (e) => {

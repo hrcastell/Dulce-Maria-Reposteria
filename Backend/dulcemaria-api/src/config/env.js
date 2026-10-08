@@ -45,7 +45,15 @@ function validateEnv() {
   }
 
   if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
-    warnings.push('FRONTEND_URL not set in production (CORS may not work correctly)');
+    errors.push('FRONTEND_URL is required in production');
+  }
+
+  if (process.env.NODE_ENV === 'production' && process.env.ENABLE_BOOTSTRAP === 'true') {
+    errors.push('ENABLE_BOOTSTRAP must not remain enabled in production');
+  }
+
+  if (process.env.TRUST_PROXY_HOPS && !/^\d+$/.test(process.env.TRUST_PROXY_HOPS)) {
+    errors.push('TRUST_PROXY_HOPS must be a non-negative integer');
   }
 
   // Si hay errores críticos, fallar

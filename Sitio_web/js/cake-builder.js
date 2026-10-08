@@ -73,7 +73,7 @@ function renderProgressBar() {
           ${isDone ? 'bg-dm-mint text-dm-brown' : isActive ? 'bg-dm-pink text-dm-brown' : 'bg-dm-cream text-dm-brown/40'}">
           ${isDone ? '✓' : i + 1}
         </div>
-        <span class="text-xs mt-1 font-body ${isActive ? 'text-dm-brown font-semibold' : 'text-dm-brown/40'} hidden sm:block">${cat.label}</span>
+        <span class="text-xs mt-1 font-body ${isActive ? 'text-dm-brown font-semibold' : 'text-dm-brown/40'} hidden sm:block">${escapeHtml(cat.label)}</span>
       </div>
       ${i < cakeCategories.length - 1 ? `<div class="flex-1 h-0.5 mt-4 ${i < currentStep ? 'bg-dm-mint' : 'bg-dm-cream'}"></div>` : ''}
     `;
@@ -96,10 +96,15 @@ function renderCurrentStep() {
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         ${cat.options.map(opt => {
           const isSel = selected?.id === opt.id;
-          const imgUrl = opt.image_url ? (opt.image_url.startsWith('http') ? opt.image_url : `${API_BASE}${opt.image_url}`) : null;
+          const rawLabel = opt.label;
+          opt = { ...opt, label: escapeHtml(opt.label) };
+          const rawImageUrl = opt.image_url
+            ? (opt.image_url.startsWith('http') ? opt.image_url : `${API_BASE}${opt.image_url}`)
+            : null;
+          const imgUrl = rawImageUrl ? escapeHtml(safePublicUrl(rawImageUrl, '')) : null;
           return `
             <button
-              data-cake-opt="${cat.type}:${opt.id}:${encodeURIComponent(opt.label)}:${opt.extra_price_clp || 0}:${cat.id}"
+              data-cake-opt="${cat.type}:${opt.id}:${encodeURIComponent(rawLabel)}:${opt.extra_price_clp || 0}:${cat.id}"
               class="group relative overflow-hidden rounded-xl border-2 transition-all duration-200 ${isSel
                 ? 'border-dm-pink ring-2 ring-dm-pink/30 shadow-md'
                 : 'border-dm-cream hover:border-dm-mint'}"
@@ -139,10 +144,10 @@ function renderCurrentStep() {
                 : 'border-dm-cream hover:border-dm-mint hover:bg-dm-mint/10'}"
             >
               <div class="flex justify-between items-start">
-                <span class="font-semibold text-dm-brown">${opt.label}</span>
+                <span class="font-semibold text-dm-brown">${escapeHtml(opt.label)}</span>
                 ${isSel ? '<span class="text-dm-pink text-xl">✓</span>' : ''}
               </div>
-              ${opt.description ? `<p class="text-sm text-dm-brown/50 mt-1">${opt.description}</p>` : ''}
+              ${opt.description ? `<p class="text-sm text-dm-brown/50 mt-1">${escapeHtml(opt.description)}</p>` : ''}
               <span class="text-sm font-medium mt-2 block ${opt.extra_price_clp > 0 ? 'text-dm-brown' : 'text-dm-brown/40'}">
                 ${opt.extra_price_clp > 0 ? `+$${fmtPrice(opt.extra_price_clp)}` : 'Incluido'}
               </span>
@@ -155,11 +160,16 @@ function renderCurrentStep() {
 
   container.innerHTML = `
     <div class="p-6 sm:p-8">
-      <h3 class="font-display text-2xl font-bold text-dm-brown mb-1">${cat.label}</h3>
+      <h3 class="font-display text-2xl font-bold text-dm-brown mb-1">${escapeHtml(cat.label)}</h3>
       <p class="font-body text-dm-brown/40 text-sm mb-6">Elige una opción para continuar</p>
       ${optionsHtml}
     </div>
   `;
+  container.querySelectorAll('img').forEach((image) => {
+    image.addEventListener('error', () => {
+      image.style.display = 'none';
+    });
+  });
 
   // Nav buttons
   const prevBtn = document.getElementById('cake-prev-btn');
@@ -203,8 +213,8 @@ function openCakeModal() {
     summaryEl.innerHTML = cakeCategories.map(cat => {
       const sel = cakeSelections[cat.type];
       return `<div class="flex justify-between font-body">
-        <span class="text-dm-brown/50">${cat.label}:</span>
-        <span class="font-medium text-dm-brown">${sel?.label || '—'}${sel?.extra_price_clp > 0 ? ` (+$${fmtPrice(sel.extra_price_clp)})` : ''}</span>
+        <span class="text-dm-brown/50">${escapeHtml(cat.label)}:</span>
+        <span class="font-medium text-dm-brown">${escapeHtml(sel?.label || '—')}${sel?.extra_price_clp > 0 ? ` (+$${fmtPrice(sel.extra_price_clp)})` : ''}</span>
       </div>`;
     }).join('');
   }
@@ -243,16 +253,11 @@ async function submitCakeOrder() {
   errEl.classList.add('hidden');
 
   const total = calcCakePrice();
-  const extrasTotal = Object.values(cakeSelections).reduce((s, sel) => s + (sel?.extra_price_clp || 0), 0);
-
   const body = {
     customer_name: name,
     customer_phone: phone,
     customer_address: address || null,
     notes: notes || null,
-    base_price_clp: BASE_PRICE,
-    extras_price_clp: extrasTotal,
-    total_price_clp: total,
   };
 
   // Assign option IDs by category type
@@ -282,10 +287,11 @@ async function submitCakeOrder() {
 
     const orderNum = data.order_number;
     const deposit = data.deposit_clp;
+    const confirmedTotal = Number(data.total_price_clp);
     document.getElementById('cake-order-number-display').textContent = orderNum;
 
     const configText = cakeCategories.map(c => `${c.label}: ${cakeSelections[c.type]?.label || '—'}`).join(', ');
-    const msg = encodeURIComponent(`Hola! Hice un pedido de torta ${orderNum} — ${configText} — Total: $${fmtPrice(total)}. Me contacto para confirmar.`);
+    const msg = encodeURIComponent(`Hola! Hice un pedido de torta ${orderNum} — ${configText} — Total: $${fmtPrice(confirmedTotal)}. Me contacto para confirmar.`);
     document.getElementById('cake-whatsapp-link').href = `https://wa.me/56932423459?text=${msg}`;
 
     document.getElementById('cake-modal-step-1').classList.add('hidden');

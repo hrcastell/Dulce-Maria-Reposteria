@@ -54,10 +54,10 @@ function updateCartUI() {
         cartItemsEl.innerHTML = cartItems.map(item => `
         <div class="flex items-center gap-3 py-3 border-b border-dm-cream/60" data-cart-key="${item.key}">
           ${item.image
-            ? `<img src="${item.image}" data-cart-img class="w-14 h-14 object-cover rounded-xl flex-shrink-0 shadow-sm">`
+            ? `<img src="${escapeHtml(safePublicUrl(item.image, ''))}" data-cart-img class="w-14 h-14 object-cover rounded-xl flex-shrink-0 shadow-sm">`
             : `<div class="w-14 h-14 bg-dm-pink/10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl">🍰</div>`}
           <div class="flex-1 min-w-0">
-            <p class="font-body text-sm font-medium text-dm-brown truncate">${item.name}</p>
+            <p class="font-body text-sm font-medium text-dm-brown truncate">${escapeHtml(item.name)}</p>
             <p class="font-body text-sm text-dm-pink font-semibold">$${formatPrice(item.price)}</p>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
@@ -157,7 +157,7 @@ function openPaymentModal() {
   if (summaryEl) {
       summaryEl.innerHTML = cartItems.map(i =>
         `<div class="flex justify-between text-sm py-1 font-body">
-          <span class="text-dm-brown/70">${i.name} × ${i.qty}</span>
+          <span class="text-dm-brown/70">${escapeHtml(i.name)} × ${i.qty}</span>
           <span class="font-medium text-dm-brown">$${formatPrice(i.price * i.qty)}</span>
         </div>`
       ).join('');
@@ -201,9 +201,7 @@ async function confirmOrder() {
       items: cartItems.map(i => ({
         product_id: i.product_id,
         variant_id: i.variant_id || null,
-        product_name: i.name,
-        qty: i.qty,
-        unit_price_clp: i.price
+        qty: i.qty
       }))
     };
 
@@ -219,7 +217,7 @@ async function confirmOrder() {
     const orderNum = data.order_number || data.order_id?.slice(0, 8).toUpperCase();
     document.getElementById('order-number-display').textContent = `#${orderNum}`;
 
-    const total = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const total = Number(data.total_clp);
     const summary = cartItems.map(i => `${i.name} x${i.qty}`).join(', ');
     const msg = encodeURIComponent(`Hola! Hice un pedido #${orderNum} — ${summary} — Total: $${formatPrice(total)}. Me contacto para confirmar.`);
     document.getElementById('whatsapp-confirm-link').href = `https://wa.me/56932423459?text=${msg}`;

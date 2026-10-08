@@ -56,15 +56,15 @@ function outOfStockCard(product) {
   const imgUrl = getImageUrl(product.thumb_url);
 
   const imgHtml = imgUrl
-    ? `<img src="${imgUrl}" alt="${product.name}" data-img-fallback class="w-full aspect-[4/3] object-cover opacity-80" loading="lazy">`
+    ? `<img src="${escapeHtml(safePublicUrl(imgUrl, ''))}" alt="${escapeHtml(product.name)}" data-img-fallback class="w-full aspect-[4/3] object-cover opacity-80" loading="lazy">`
     : `<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>`;
 
   return `
     <div class="group bg-dm-cream/60 rounded-2xl border border-dm-cream/80 overflow-hidden opacity-80 hover:opacity-100 transition-opacity duration-300" id="card-${product.id}">
       <div class="overflow-hidden">${imgHtml}</div>
       <div class="p-4">
-        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${product.name}</h3>
-        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs line-clamp-2 leading-relaxed">${product.description}</p>` : ''}
+        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${escapeHtml(product.name)}</h3>
+        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs line-clamp-2 leading-relaxed">${escapeHtml(product.description)}</p>` : ''}
         <span class="inline-flex items-center mt-3 text-[10px] font-body font-semibold uppercase tracking-wider text-dm-brown/40">Próximamente</span>
       </div>
     </div>`;
@@ -122,14 +122,14 @@ function productCard(product) {
   const outOfStock = totalStock === 0;
 
   const imgHtml = imgUrl
-    ? `<img src="${imgUrl}" alt="${product.name}" data-img-fallback class="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500 ease-out" loading="lazy">`
+    ? `<img src="${escapeHtml(safePublicUrl(imgUrl, ''))}" alt="${escapeHtml(product.name)}" data-img-fallback class="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500 ease-out" loading="lazy">`
     : `<div class="w-full aspect-[4/3] bg-dm-pink/10 flex items-center justify-center text-4xl">🍰</div>`;
 
   const variantSelect = hasVariants ? `
     <select id="variant-${product.id}" data-variant-for="${product.id}"
       class="w-full border border-dm-cream rounded-xl px-3 py-2 text-sm mb-3 font-body text-dm-brown bg-white focus:outline-none focus:ring-2 focus:ring-dm-mint transition-all duration-200">
       ${product.variants.filter(v => v.is_active !== false).map(v =>
-        `<option value="${v.id}" data-price="${v.price_clp ?? product.price_clp}" data-stock="${v.stock_qty}">${v.name}${v.price_clp && v.price_clp !== product.price_clp ? ' — $' + formatPrice(v.price_clp) : ''}</option>`
+        `<option value="${v.id}" data-price="${v.price_clp ?? product.price_clp}" data-stock="${v.stock_qty}">${escapeHtml(v.name)}${v.price_clp && v.price_clp !== product.price_clp ? ' — $' + formatPrice(v.price_clp) : ''}</option>`
       ).join('')}
     </select>` : '';
 
@@ -145,8 +145,8 @@ function productCard(product) {
     <div class="group bg-white rounded-2xl border border-dm-cream overflow-hidden hover:shadow-lg hover:shadow-dm-brown/5 transition-all duration-300 ease-out" id="card-${product.id}">
       <div class="overflow-hidden">${imgHtml}</div>
       <div class="p-4">
-        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${product.name}</h3>
-        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs mb-3 line-clamp-2 leading-relaxed">${product.description}</p>` : ''}
+        <h3 class="font-display text-base font-bold text-dm-brown mb-1 leading-snug">${escapeHtml(product.name)}</h3>
+        ${product.description ? `<p class="font-body text-dm-brown/50 text-xs mb-3 line-clamp-2 leading-relaxed">${escapeHtml(product.description)}</p>` : ''}
         <div class="flex justify-between items-center mb-3">
           <span class="inline-flex items-center px-2.5 py-1 bg-dm-brown text-white rounded-lg font-body text-sm font-bold" id="price-${product.id}">$${formatPrice(product.price_clp)}</span>
           ${outOfStock

@@ -2,21 +2,7 @@ export const useApi = () => {
   const config = useRuntimeConfig()
   const router = useRouter()
 
-  const getToken = () => {
-    if (process.client) {
-      return localStorage.getItem('auth_token')
-    }
-    return null
-  }
-
   const apiRequest = async <T>(endpoint: string, options: any = {}): Promise<T> => {
-    const token = getToken()
-
-    if (!token && !options.skipAuth) {
-      router.push('/login')
-      throw new Error('No authentication token')
-    }
-
     const isFormData = options.body instanceof FormData
 
     const headers: any = {
@@ -24,13 +10,10 @@ export const useApi = () => {
       ...options.headers
     }
 
-    if (token && !options.skipAuth) {
-      headers.Authorization = `Bearer ${token}`
-    }
-
     try {
       const response = await $fetch<T>(`${config.public.apiBase}${endpoint}`, {
         ...options,
+        credentials: 'include',
         headers
       })
 
@@ -38,7 +21,6 @@ export const useApi = () => {
     } catch (error: any) {
       // Si el error es 401 (no autorizado), redirigir al login
       if (error?.response?.status === 401) {
-        localStorage.removeItem('auth_token')
         localStorage.removeItem('user')
         router.push('/login')
       }

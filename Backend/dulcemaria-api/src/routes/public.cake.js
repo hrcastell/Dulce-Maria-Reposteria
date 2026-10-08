@@ -44,31 +44,70 @@ router.get(["", "/"], async (req, res) => {
  */
 router.post("/orders", async (req, res) => {
   const schema = z.object({
-    customer_name: z.string().min(2).max(200),
-    customer_phone: z.string().min(6).max(30),
+    customer_name: z.string().trim().min(2).max(200),
+    customer_phone: z.string().trim().regex(/^\+?[0-9 ()-]{6,30}$/),
     customer_email: z.string().email().optional().nullable(),
-    customer_address: z.string().max(400).optional().nullable(),
+    customer_address: z.string().trim().max(400).optional().nullable(),
     size_option_id: z.string().uuid().optional().nullable(),
     layers_option_id: z.string().uuid().optional().nullable(),
     sponge_option_id: z.string().uuid().optional().nullable(),
     filling_option_id: z.string().uuid().optional().nullable(),
     decoration_option_id: z.string().uuid().optional().nullable(),
     theme_option_id: z.string().uuid().optional().nullable(),
-    base_price_clp: z.number().int().nonnegative(),
-    extras_price_clp: z.number().int().nonnegative(),
-    total_price_clp: z.number().int().nonnegative(),
     notes: z.string().max(500).optional().nullable(),
-  });
+  }).strict();
 
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
   const d = parsed.data;
-  const deposit = Math.ceil(d.total_price_clp * 0.5);
-  const orderNumber = `CAKE-${Date.now()}`;
+  const orderNumber = `CAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
   try {
     const pool = getPool();
+    const keyToType = {
+      theme_option_id: "THEME",
+      size_option_id: "SIZE",
+      layers_option_id: "LAYERS",
+      sponge_option_id: "SPONGE",
+      filling_option_id: "FILLING",
+      decoration_option_id: "DECORATION",
+    };
+    const selected = Object.entries(keyToType)
+      .filter(([key]) => Boolean(d[key]))
+      .map(([key, type]) => ({ key, type, id: d[key] }));
+    const ids = selected.map((item) => item.id);
+    const optionsResult = ids.length
+      ? await pool.query(
+          `SELECT o.id, o.extra_price_clp, c.type
+           FROM cake_config_option o
+           JOIN cake_config_category c ON c.id=o.category_id
+           WHERE o.id=ANY($1::uuid[]) AND o.is_active=true AND c.is_active=true`,
+          [ids]
+        )
+      : { rows: [] };
+    const options = new Map(optionsResult.rows.map((option) => [option.id, option]));
+    for (const item of selected) {
+      const option = options.get(item.id);
+      if (!option || option.type !== item.type) {
+        return res.status(400).json({ ok: false, error: "Configuración de torta inválida" });
+      }
+    }
+
+    const configResult = await pool.query(
+      `SELECT value FROM system_config WHERE key='cake_base_price' LIMIT 1`
+    );
+    const basePrice = configResult.rowCount ? Number(configResult.rows[0].value) : 30000;
+    const extrasPrice = optionsResult.rows.reduce(
+      (sum, option) => sum + Number(option.extra_price_clp || 0),
+      0
+    );
+    const totalPrice = basePrice + extrasPrice;
+    if (!Number.isSafeInteger(totalPrice) || totalPrice <= 0 || totalPrice > 100000000) {
+      return res.status(400).json({ ok: false, error: "Total del pedido inválido" });
+    }
+    const deposit = Math.ceil(totalPrice * 0.5);
+
     const r = await pool.query(
       `INSERT INTO cake_orders
          (id, order_number, customer_name, customer_phone, customer_email, customer_address,
@@ -80,7 +119,7 @@ router.post("/orders", async (req, res) => {
         crypto.randomUUID(), orderNumber, d.customer_name, d.customer_phone, d.customer_email ?? null, d.customer_address ?? null,
         d.size_option_id ?? null, d.layers_option_id ?? null, d.sponge_option_id ?? null,
         d.filling_option_id ?? null, d.decoration_option_id ?? null, d.theme_option_id ?? null,
-        d.base_price_clp, d.extras_price_clp, d.total_price_clp, deposit, d.notes ?? null
+        basePrice, extrasPrice, totalPrice, deposit, d.notes ?? null
       ]
     );
 

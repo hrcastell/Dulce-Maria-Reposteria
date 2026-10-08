@@ -16,6 +16,13 @@ const APP_ROOT = path.join(__dirname, "..", "..");
 const UPLOADS_DIR = path.join(APP_ROOT, "uploads");
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+function resolveLocalUploadPath(imageUrl) {
+  if (!String(imageUrl || "").startsWith("/uploads/")) return null;
+  const candidate = path.resolve(APP_ROOT, String(imageUrl).replace(/^\/+/, ""));
+  const uploadsRoot = path.resolve(UPLOADS_DIR) + path.sep;
+  return candidate.startsWith(uploadsRoot) ? candidate : null;
+}
+
 function extFromMime(mime) {
   if (mime === "image/jpeg") return ".jpg";
   if (mime === "image/png") return ".png";
@@ -209,7 +216,9 @@ router.get("/orders", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
 });
 
 router.patch("/orders/:id/status", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
-  const schema = z.object({ status: z.string().min(1) });
+  const schema = z.object({
+    status: z.enum(["PENDING_PAYMENT", "PAID", "PREPARING", "READY", "DELIVERED", "CANCELLED"]),
+  }).strict();
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
   try {
@@ -247,8 +256,8 @@ router.post(
       // Delete old image file if exists
       const old = await pool.query("SELECT image_url FROM cake_config_option WHERE id=$1", [optionId]);
       if (old.rows[0]?.image_url) {
-        const oldPath = path.join(APP_ROOT, old.rows[0].image_url);
-        try { fs.unlinkSync(oldPath); } catch {}
+        const oldPath = resolveLocalUploadPath(old.rows[0].image_url);
+        if (oldPath) try { fs.unlinkSync(oldPath); } catch {}
       }
 
       const relUrl = `/uploads/cake-themes/${optionId}/${file.filename}`;
@@ -278,8 +287,8 @@ router.delete(
 
       const imageUrl = r.rows[0].image_url;
       if (imageUrl) {
-        const oldPath = path.join(APP_ROOT, imageUrl);
-        try { fs.unlinkSync(oldPath); } catch {}
+        const oldPath = resolveLocalUploadPath(imageUrl);
+        if (oldPath) try { fs.unlinkSync(oldPath); } catch {}
       }
 
       await pool.query("UPDATE cake_config_option SET image_url=NULL WHERE id=$1", [optionId]);

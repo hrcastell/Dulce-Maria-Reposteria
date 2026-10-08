@@ -28,12 +28,13 @@ const publicHeroRoutes = require("./src/routes/public.hero");
 const { runCompleteMigrations } = require("./src/migrations/complete");
 const { autoBootstrapSuperadmin } = require("./src/bootstrap/autoSuperadmin");
 
-const { requireAuth } = require("./src/middleware/auth");
-const { publicApiLimiter, adminApiLimiter } = require("./src/middleware/rate-limit");
+const { requireAuth, requireTrustedOrigin } = require("./src/middleware/auth");
+const { publicApiLimiter, publicOrderLimiter, adminApiLimiter } = require("./src/middleware/rate-limit");
 const { getPool } = require("./src/db");
 
 const app = express();
-app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
 
 // CORS restrictivo
 // FRONTEND_URL admite una lista separada por comas para soportar múltiples
@@ -45,10 +46,9 @@ const extraOrigins = (process.env.FRONTEND_URL || "")
   .filter(Boolean);
 
 const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173", // Vite dev
   "https://dulcemaria.hrcastell.com",
   "https://admin.dulcemaria.hrcastell.com",
+  ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000", "http://localhost:5173"]),
   ...extraOrigins,
 ].filter(Boolean);
 
@@ -60,15 +60,33 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
+      const error = new Error("Origin not allowed by CORS");
+      error.status = 403;
+      callback(error);
     }
   },
   credentials: true,
 }));
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  hsts: process.env.NODE_ENV === "production"
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false,
+}));
 app.use(express.json({ limit: "2mb" }));
-app.use(morgan("combined"));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (process.env.NODE_ENV === "production" && res.statusCode >= 500 && body?.error) {
+      return originalJson({ ...body, error: "Internal server error" });
+    }
+    return originalJson(body);
+  };
+  next();
+});
 
 // Evitar que el proxy/CDN de cPanel cachee respuestas de la API
 app.use((req, res, next) => {
@@ -103,12 +121,13 @@ apiRouter.get("/health", (req, res) => {
 // Rutas de API
 apiRouter.use("/auth", authRoutes);
 apiRouter.use("/catalog", publicApiLimiter, publicCatalogRoutes);
+apiRouter.use("/public/cake-builder/orders", publicOrderLimiter);
 apiRouter.use("/public/cake-builder", publicApiLimiter, publicCakeRoutes);
-apiRouter.use("/public/orders", publicApiLimiter, publicOrdersRoutes);
+apiRouter.use("/public/orders", publicOrderLimiter, publicApiLimiter, publicOrdersRoutes);
 apiRouter.use("/public/hero", publicApiLimiter, publicHeroRoutes);
 
 // Admin (protegido)
-apiRouter.use("/admin", requireAuth, adminApiLimiter);
+apiRouter.use("/admin", requireAuth, requireTrustedOrigin, adminApiLimiter);
 apiRouter.use("/admin/customers", adminCustomersRoutes);
 apiRouter.use("/admin/orders", adminOrdersRoutes);
 apiRouter.use("/admin/reports", adminReportsRoutes);
@@ -159,7 +178,13 @@ app.use((err, req, res, next) => {
   if (err && err.code === "LIMIT_UNEXPECTED_FILE") {
     return res.status(400).json({ ok: false, error: "Campo inválido. Debe ser 'images'." });
   }
-  return res.status(500).json({ ok: false, error: err?.message || "Internal Server Error" });
+  const status = Number(err?.status || 500);
+  return res.status(status).json({
+    ok: false,
+    error: status >= 500 && process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : (err?.message || "Internal Server Error"),
+  });
 });
 
 (async () => {

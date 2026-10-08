@@ -52,6 +52,18 @@ const publicApiLimiter = rateLimit({
   },
 });
 
+const publicOrderLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    ok: false,
+    error: "Demasiados intentos de pedido. Intenta nuevamente en 15 minutos.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || req.connection.remoteAddress,
+});
+
 // Rate limiter para admin API (menos estricto porque ya está autenticado)
 const adminApiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
@@ -72,5 +84,6 @@ module.exports = {
   loginLimiter,
   bootstrapLimiter,
   publicApiLimiter,
+  publicOrderLimiter,
   adminApiLimiter,
 };

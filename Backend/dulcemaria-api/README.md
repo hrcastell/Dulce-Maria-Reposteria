@@ -393,3 +393,8 @@ Dulce María Repostería
 Para issues o preguntas, revisar:
 - `CHANGES.md` - Log de cambios
 - `docs/` - Documentación adicional (próximamente)
+# Aviso de seguridad
+
+No use las instrucciones heredadas que envían `BOOTSTRAP_TOKEN` en la URL.
+El bootstrap HTTP está desactivado en producción; use una terminal segura y
+consulte `../../SECURITY_TRANSBANK.md`.

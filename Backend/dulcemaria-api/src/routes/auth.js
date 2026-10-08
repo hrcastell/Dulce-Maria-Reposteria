@@ -5,17 +5,30 @@ const { z } = require("zod");
 const { getPool } = require("../db");
 const { verifyPassword } = require("../utils/password");
 const { loginLimiter, bootstrapLimiter } = require("../middleware/rate-limit");
-const { requireAuth } = require("../middleware/auth");
+const {
+  AUTH_COOKIE,
+  JWT_ISSUER,
+  JWT_AUDIENCE,
+  requireAuth,
+  requireTrustedOrigin,
+} = require("../middleware/auth");
 const { isPlatformOwner } = require("../lib/platformOwner");
 
 const crypto = require("crypto");
 const { hashPassword } = require("../utils/password");
+const DUMMY_PASSWORD_HASH = require("bcryptjs").hashSync(
+  crypto.randomBytes(32).toString("hex"),
+  12
+);
 
 function requireBootstrapToken(req, res) {
-  const token = req.query.token || "";
+  if (process.env.ENABLE_BOOTSTRAP !== "true") {
+    return { ok: false, status: 404, error: "Not found" };
+  }
+  const token = req.get("x-bootstrap-token") || "";
   const expected = process.env.BOOTSTRAP_TOKEN || "";
-  if (!expected) return { ok: false, status: 500, error: "BOOTSTRAP_TOKEN no está configurado en cPanel." };
-  if (!token) return { ok: false, status: 401, error: "Falta token (?token=...)." };
+  if (!expected) return { ok: false, status: 503, error: "Bootstrap unavailable" };
+  if (!token) return { ok: false, status: 401, error: "Bootstrap authentication required" };
 
   const a = Buffer.from(String(token));
   const b = Buffer.from(String(expected));
@@ -25,13 +38,37 @@ function requireBootstrapToken(req, res) {
   return { ok: true };
 }
 
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 8 * 60 * 60 * 1000,
+  };
+}
+
+function signSession(user) {
+  return jwt.sign(
+    { sub: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      algorithm: "HS256",
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+      expiresIn: "8h",
+      jwtid: crypto.randomUUID(),
+    }
+  );
+}
+
 
 const router = express.Router();
 
 router.post("/login", loginLimiter, async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
-    password: z.string().min(6),
+    password: z.string().min(1).max(200),
   });
 
   const parsed = schema.safeParse(req.body);
@@ -49,7 +86,10 @@ router.post("/login", loginLimiter, async (req, res) => {
       [email.toLowerCase()]
     );
 
-    if (r.rowCount === 0) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
+    if (r.rowCount === 0) {
+      await verifyPassword(password, DUMMY_PASSWORD_HASH);
+      return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
+    }
 
     const user = r.rows[0];
     if (!user.is_active) return res.status(403).json({ ok: false, error: "Usuario inactivo" });
@@ -57,15 +97,11 @@ router.post("/login", loginLimiter, async (req, res) => {
     const ok = await verifyPassword(password, user.password_hash);
     if (!ok) return res.status(401).json({ ok: false, error: "Credenciales inválidas" });
 
-    const token = jwt.sign(
-      { sub: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = signSession(user);
+    res.cookie(AUTH_COOKIE, token, sessionCookieOptions());
 
     return res.json({
       ok: true,
-      token,
       user: {
         id: user.id,
         email: user.email,
@@ -76,6 +112,16 @@ router.post("/login", loginLimiter, async (req, res) => {
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }
+});
+
+router.post("/logout", requireAuth, requireTrustedOrigin, (req, res) => {
+  res.clearCookie(AUTH_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+  });
+  return res.json({ ok: true });
 });
 
 // Obtener información del usuario actual
@@ -137,8 +183,10 @@ router.post("/bootstrap", bootstrapLimiter, async (req, res) => {
       );
     }
 
-    const token = jwt.sign({ sub: id, email, role: "SUPERADMIN" }, process.env.JWT_SECRET, { expiresIn: "7d" });
-    return res.json({ ok: true, message: "SUPERADMIN listo.", token, user: { id, email, role: "SUPERADMIN" } });
+    return res.json({
+      ok: true,
+      message: "SUPERADMIN listo. Desactiva ENABLE_BOOTSTRAP y elimina ADMIN_PASSWORD/BOOTSTRAP_TOKEN del entorno.",
+    });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
   }

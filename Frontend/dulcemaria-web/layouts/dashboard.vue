@@ -269,7 +269,16 @@ const isActive = (path: string) => {
   return route.path.startsWith(path)
 }
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  const config = useRuntimeConfig()
+  try {
+    await $fetch(`${config.public.apiBase}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+  } catch {
+    // La sesión local se limpia igualmente si el servidor ya la expiró.
+  }
   localStorage.removeItem('auth_token')
   localStorage.removeItem('user')
   router.push('/login')

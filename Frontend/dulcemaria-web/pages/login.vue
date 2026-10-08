@@ -162,14 +162,15 @@ const handleLogin = async () => {
   try {
     const response = await $fetch(`${config.public.apiBase}/auth/login`, {
       method: 'POST',
+      credentials: 'include',
       body: {
         email: form.value.email,
         password: form.value.password
       }
     })
 
-    if (response.ok && response.token) {
-      localStorage.setItem('auth_token', response.token)
+    if (response.ok && response.user) {
+      localStorage.removeItem('auth_token')
       localStorage.setItem('user', JSON.stringify(response.user))
       await router.push('/dashboard')
     } else {

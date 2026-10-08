@@ -1,10 +1,18 @@
-export default defineNuxtRouteMiddleware((to, from) => {
-  // Solo ejecutar en el cliente
-  if (process.client) {
-    const token = localStorage.getItem('auth_token')
-    
-    if (!token) {
-      return navigateTo('/login')
+export default defineNuxtRouteMiddleware(async () => {
+  if (!process.client) return
+
+  const config = useRuntimeConfig()
+  try {
+    const response: any = await $fetch(`${config.public.apiBase}/auth/me`, {
+      credentials: 'include'
+    })
+    if (response?.user) {
+      localStorage.setItem('user', JSON.stringify(response.user))
+      localStorage.removeItem('auth_token')
     }
+  } catch {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user')
+    return navigateTo('/login')
   }
 })

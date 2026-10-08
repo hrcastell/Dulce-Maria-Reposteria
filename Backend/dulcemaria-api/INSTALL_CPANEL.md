@@ -619,3 +619,11 @@ Una vez confirmado que todo funciona:
 **Fecha:** 2026-02-07  
 **Autor:** Hernán Ricardo  
 **Proyecto:** Dulce María Repostería Backend v2.0
+# ADVERTENCIA DE SEGURIDAD (2026)
+
+Las secciones antiguas que proponen endpoints temporales como
+`install-deps-now`, `run-migrations-now`, `validate-schema-now` o secretos en
+`?token=` están obsoletas y **no deben ejecutarse ni publicarse**. Las URLs se
+guardan en historial, logs y proxies, y esos helpers permiten operaciones
+administrativas remotas. Use la terminal segura de cPanel/SSH para instalar,
+migrar y crear administradores. Consulte `SECURITY_TRANSBANK.md` en la raíz.
