@@ -259,7 +259,11 @@
             <div v-if="draftItem._showProductDropdown && filteredProductsFor(draftItem).length > 0" class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
               <div v-for="p in filteredProductsFor(draftItem)" :key="p.id" class="px-4 py-2 hover:bg-primary-50 cursor-pointer transition-colors text-sm border-b border-warm-50 last:border-0" @mousedown.prevent="selectProduct(draftItem, p)">
                 <div class="font-medium text-warm-800">{{ p.name }}</div>
-                <div class="text-xs text-warm-500">${{ formatPrice(p.price_clp) }} · Stock: {{ p.stock_qty }}</div>
+                <div class="text-xs text-warm-500">
+                  ${{ formatPrice(p.price_clp) }} ·
+                  <span v-if="p.stock_qty > 0">Stock: {{ p.stock_qty }}</span>
+                  <span v-else class="font-medium text-warning-700">Sin stock — podés reponerlo al elegirlo</span>
+                </div>
               </div>
             </div>
             <div v-else-if="draftItem._showProductDropdown && draftItem._productSearch" class="absolute z-10 w-full mt-1 bg-white border border-warm-200 rounded-xl shadow-lg p-3 text-center text-xs text-warm-500">
@@ -280,6 +284,59 @@
               {{ v.name }} (${{ formatPrice(v.price_override_clp || draftItem._basePrice) }}) - Stock: {{ v.stock_qty }}
             </option>
           </select>
+        </div>
+
+        <!-- Reposición rápida de stock sin salir de la orden: suma unidades al
+             producto (o a una de sus variantes) y refresca lo que se muestra. -->
+        <div v-if="draftItem.productId" class="rounded-xl border border-warm-100 bg-warm-50 p-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-warm-600">
+              Stock disponible:
+              <strong class="text-warm-800">{{ draftStockLabel }}</strong>
+            </span>
+            <button
+              type="button"
+              class="text-xs font-medium text-primary-600 hover:text-primary-700"
+              @click="toggleRestock"
+            >
+              {{ restock.open ? 'Cancelar' : '+ Reponer stock' }}
+            </button>
+          </div>
+
+          <div v-if="restock.open" class="space-y-2">
+            <select
+              v-if="draftHasVariants"
+              v-model="restock.variantId"
+              class="block w-full px-3 py-2 border border-warm-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
+            >
+              <option value="">¿Qué variante reponés?</option>
+              <option v-for="v in draftItem._variants" :key="v.id" :value="v.id">
+                {{ v.name }} — stock actual: {{ v.stock_qty }}{{ v.is_active ? '' : ' (inactiva)' }}
+              </option>
+            </select>
+            <div class="flex gap-2">
+              <input
+                v-model.number="restock.qty"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Unidades a sumar"
+                class="block w-full px-3 py-2 border border-warm-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
+              >
+              <button
+                type="button"
+                class="btn-primary text-sm whitespace-nowrap disabled:opacity-50"
+                :disabled="restock.saving"
+                @click="saveRestock"
+              >
+                {{ restock.saving ? 'Guardando...' : 'Sumar al stock' }}
+              </button>
+            </div>
+            <p v-if="restockPreview !== null" class="text-xs text-warm-500">
+              Quedará en <strong>{{ restockPreview }}</strong> unidades.
+            </p>
+            <p v-if="restock.error" class="text-xs text-error-700">{{ restock.error }}</p>
+          </div>
         </div>
 
         <div>
@@ -524,8 +581,10 @@ const onProductChange = async (item: OrderItem) => {
   await fetchItemProductDetails(item)
 }
 
+// Incluye productos sin stock (marcados en el dropdown) para poder elegirlos y
+// reponerlos desde el modal — antes quedaban ocultos y no había cómo.
 const filteredProductsFor = (item: OrderItem) => {
-  const pool = products.value.filter(p => p.is_active && p.stock_qty > 0)
+  const pool = products.value.filter(p => p.is_active)
   if (!item._productSearch) return pool.slice(0, 10)
   const lower = item._productSearch.toLowerCase()
   return pool.filter(p => p.name.toLowerCase().includes(lower)).slice(0, 10)
@@ -550,7 +609,89 @@ const clearProductSelection = (item: OrderItem) => {
   item._basePrice = 0
 }
 
+// ── Reposición rápida de stock desde el modal de producto ──
+const createEmptyRestock = () => ({ open: false, variantId: '', qty: null as number | null, saving: false, error: '' })
+const restock = ref(createEmptyRestock())
+
+const draftHasVariants = computed(() => (draftItem.value._variants?.length || 0) > 0)
+
+const draftStockLabel = computed(() => {
+  const d = draftItem.value
+  if (draftHasVariants.value) {
+    const v = d._variants?.find(x => x.id === d.variantId)
+    return v ? `${v.stock_qty} (${v.name})` : 'elegí una variante'
+  }
+  return String(products.value.find(p => p.id === d.productId)?.stock_qty ?? 0)
+})
+
+const restockCurrentStock = (): number | null => {
+  const d = draftItem.value
+  if (draftHasVariants.value) {
+    const v = d._variants?.find(x => x.id === restock.value.variantId)
+    return v ? Number(v.stock_qty) : null
+  }
+  const p = products.value.find(x => x.id === d.productId)
+  return p ? Number(p.stock_qty) : null
+}
+
+const restockPreview = computed(() => {
+  const current = restockCurrentStock()
+  const qty = restock.value.qty
+  if (current === null || !qty || qty < 1) return null
+  return current + qty
+})
+
+// Cambiar de producto descarta una reposición a medio cargar del anterior.
+watch(() => draftItem.value.productId, () => { restock.value = createEmptyRestock() })
+
+const toggleRestock = () => {
+  const wasOpen = restock.value.open
+  restock.value = createEmptyRestock()
+  if (!wasOpen) {
+    restock.value.open = true
+    restock.value.variantId = draftItem.value.variantId || ''
+  }
+}
+
+const saveRestock = async () => {
+  const d = draftItem.value
+  const qty = restock.value.qty
+  if (!qty || qty < 1 || !Number.isInteger(qty)) {
+    restock.value.error = 'Ingresá cuántas unidades sumar (número entero mayor a 0)'
+    return
+  }
+  if (draftHasVariants.value && !restock.value.variantId) {
+    restock.value.error = 'Elegí qué variante reponés'
+    return
+  }
+  const current = restockCurrentStock()
+  if (current === null) return
+
+  restock.value.saving = true
+  restock.value.error = ''
+  try {
+    if (draftHasVariants.value) {
+      // El trigger de la BD recalcula el stock total del producto.
+      await api.patch(`/admin/products/variants/${restock.value.variantId}`, { stock_qty: current + qty })
+      const restockedVariantId = restock.value.variantId
+      await fetchItemProductDetails(d)
+      // Al dejarla con stock, se puede vender — se preselecciona en la orden
+      // (salvo que esté inactiva: el backend la rechazaría al guardar).
+      if (d._variants?.find(v => v.id === restockedVariantId)?.is_active) d.variantId = restockedVariantId
+    } else {
+      await api.patch(`/admin/products/${d.productId}`, { stockQty: current + qty })
+    }
+    await loadProducts()
+    restock.value = createEmptyRestock()
+  } catch (e: any) {
+    restock.value.error = e?.data?.error || 'No se pudo actualizar el stock'
+  } finally {
+    restock.value.saving = false
+  }
+}
+
 const openAddItemModal = () => {
+  restock.value = createEmptyRestock()
   editingItemIndex.value = null
   draftItem.value = createEmptyItem()
   itemModalError.value = ''
@@ -558,6 +699,7 @@ const openAddItemModal = () => {
 }
 
 const openEditItemModal = (index: number) => {
+  restock.value = createEmptyRestock()
   editingItemIndex.value = index
   const original = form.value.items[index]
   // OJO: clonar `toppings` con spread es OBLIGATORIO. v-model de checkboxes
