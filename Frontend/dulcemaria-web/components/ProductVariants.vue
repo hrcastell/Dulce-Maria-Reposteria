@@ -14,11 +14,12 @@
       <div
         v-for="v in variants"
         :key="v.id || v._tempId"
-        class="bg-warm-50 rounded-xl p-3 sm:flex sm:items-center sm:gap-3 border border-warm-100"
+        class="bg-warm-50 rounded-xl p-3 sm:flex sm:items-end sm:gap-3 border border-warm-100"
       >
-        <!-- Nombre -->
+        <!-- Nombre — etiquetas siempre visibles: sin ellas, en PC quedaban tres
+             cajas iguales sin forma de saber cuál era cuál. -->
         <div class="w-full sm:flex-1 mb-3 sm:mb-0">
-           <label class="block text-xs font-medium text-warm-600 mb-1 sm:hidden">Nombre</label>
+           <label class="block text-xs font-medium text-warm-600 mb-1">Nombre de la variante</label>
            <input
             v-model="v.name"
             type="text"
@@ -32,7 +33,7 @@
         <div class="flex gap-3 mb-3 sm:mb-0">
             <!-- Precio override -->
             <div class="flex-1 sm:flex-none sm:w-36">
-              <label class="block text-xs font-medium text-warm-600 mb-1 sm:hidden">Precio</label>
+              <label class="block text-xs font-medium text-warm-600 mb-1">Precio (vacío = base)</label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400 text-xs">$</span>
                 <input
@@ -47,16 +48,14 @@
             </div>
 
             <!-- Stock -->
-            <div class="flex-1 sm:flex-none sm:w-24">
-              <label class="block text-xs font-medium text-warm-600 mb-1 sm:hidden">Stock</label>
+            <div class="flex-1 sm:flex-none sm:w-28">
+              <label class="block text-xs font-medium text-warm-600 mb-1">Stock (unidades)</label>
               <div class="relative">
-                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400 text-xs sm:hidden">#</span>
-                 <span class="hidden sm:block absolute left-3 top-1/2 -translate-y-1/2 text-warm-400 text-xs">Stk</span>
                  <input
                     v-model.number="v.stock_qty"
                     type="number"
                     min="0"
-                    class="w-full bg-white border border-warm-200 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
+                    class="w-full bg-white border border-warm-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all"
                     @blur="saveVariant(v)"
                 >
               </div>
@@ -66,14 +65,14 @@
         <!-- Footer Row on mobile (Active + Delete) -->
         <div class="flex items-center justify-between sm:justify-end sm:gap-3">
             <!-- Activo -->
-            <label class="flex items-center gap-2 cursor-pointer select-none bg-white sm:bg-transparent px-3 py-1.5 sm:p-0 rounded-lg border sm:border-0 border-warm-200" :title="v.is_active ? 'Activa' : 'Inactiva'">
+            <label class="flex items-center gap-2 cursor-pointer select-none bg-white sm:bg-transparent px-3 py-1.5 sm:px-0 sm:py-2 rounded-lg border sm:border-0 border-warm-200" :title="v.is_active ? 'Activa' : 'Inactiva'">
               <input
                   v-model="v.is_active"
                   type="checkbox"
                   class="rounded border-warm-300 text-primary-600 focus:ring-primary-500 w-4 h-4"
                   @change="saveVariant(v)"
               >
-              <span class="text-sm text-warm-700 font-medium sm:hidden">Activa</span>
+              <span class="text-sm text-warm-700 font-medium">Activa</span>
             </label>
 
             <!-- Spinner / Eliminar -->
@@ -125,6 +124,7 @@ interface Variant {
   stock_qty: number
   is_active: boolean
   _saving?: boolean
+  _pending?: boolean
   _isNew?: boolean
 }
 
@@ -175,9 +175,15 @@ const addRow = () => {
 const saveVariant = async (v: Variant) => {
   if (!props.productId) return
   if (!v.name.trim()) return
-  if (v._saving) return
+  // Si ya hay un guardado en curso, se re-guarda al terminar en vez de
+  // descartar el cambio (ej. editar el stock justo después del precio).
+  if (v._saving) {
+    v._pending = true
+    return
+  }
 
   v._saving = true
+  v._pending = false
   error.value = ''
   try {
     const body = {
@@ -203,6 +209,7 @@ const saveVariant = async (v: Variant) => {
   } finally {
     v._saving = false
   }
+  if (v._pending) await saveVariant(v)
 }
 
 const removeVariant = async (v: Variant) => {

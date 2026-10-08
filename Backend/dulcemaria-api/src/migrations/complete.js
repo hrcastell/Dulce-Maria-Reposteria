@@ -626,6 +626,18 @@ async function runCompleteMigrations() {
       AFTER DELETE ON product_variants
       FOR EACH ROW EXECUTE PROCEDURE update_product_stock_from_variants();`,
 
+    // Repara productos cuyo stock quedó desfasado de la suma de sus variantes
+    // (el PATCH de producto lo pisaba con un valor viejo del formulario).
+    // Idempotente: solo toca filas que no coinciden.
+    `UPDATE products p
+     SET stock_qty = s.total
+     FROM (
+       SELECT product_id, COALESCE(SUM(stock_qty), 0) AS total
+       FROM product_variants
+       GROUP BY product_id
+     ) s
+     WHERE p.id = s.product_id AND p.stock_qty <> s.total;`,
+
 
     // ============================================
     // FEATURE: Hero Slides (Dynamic Carousel)

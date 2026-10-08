@@ -17,6 +17,15 @@ const router = express.Router();
 // ===== Upload config =====
 const APP_ROOT = path.join(__dirname, "..", ".."); // /dulcemaria-api
 const UPLOADS_DIR = path.join(APP_ROOT, "uploads");
+
+// Mismo resguardo que admin.cake.js: solo borra archivos que resuelven
+// DENTRO de uploads/, nunca una ruta armada con "../" desde la BD.
+function resolveLocalUploadPath(imageUrl) {
+  if (!String(imageUrl || "").startsWith("/uploads/")) return null;
+  const candidate = path.resolve(APP_ROOT, String(imageUrl).replace(/^\/+/, ""));
+  const uploadsRoot = path.resolve(UPLOADS_DIR) + path.sep;
+  return candidate.startsWith(uploadsRoot) ? candidate : null;
+}
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function extFromMime(mime) {
@@ -204,7 +213,14 @@ const updateProductHandler = async (req, res) => {
     if (patch.description !== undefined) { fields.push(`description=$${n}`); values.push(patch.description); n++; }
     if (patch.priceClp !== undefined) { fields.push(`price_clp=$${n}`); values.push(patch.priceClp); n++; }
     if (patch.costPriceClp !== undefined) { fields.push(`cost_price_clp=$${n}`); values.push(patch.costPriceClp); n++; }
-    if (patch.stockQty !== undefined) { fields.push(`stock_qty=$${n}`); values.push(patch.stockQty); n++; }
+    // Con variantes, products.stock_qty lo mantiene el trigger
+    // update_product_stock_from_variants (suma de variantes). El stockQty que
+    // manda el formulario puede venir desactualizado — se calcula antes de que
+    // termine de guardarse la última variante editada — y pisaría ese total.
+    if (patch.stockQty !== undefined) {
+      const hasVariants = await pool.query("SELECT 1 FROM product_variants WHERE product_id=$1 LIMIT 1", [id]);
+      if (hasVariants.rowCount === 0) { fields.push(`stock_qty=$${n}`); values.push(patch.stockQty); n++; }
+    }
     if (patch.isActive !== undefined) { fields.push(`is_active=$${n}`); values.push(patch.isActive); n++; }
     if (patch.recipeId !== undefined) { fields.push(`recipe_id=$${n}`); values.push(patch.recipeId); n++; }
     if (patch.targetDiameterCm !== undefined) { fields.push(`target_diameter_cm=$${n}`); values.push(patch.targetDiameterCm); n++; }
@@ -345,9 +361,8 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"
     const images = await pool.query("SELECT url_original FROM product_images WHERE product_id=$1", [id]);
     for (const img of images.rows) {
       try {
-        const rel = String(img.url_original).replace(/^\/uploads\//, "");
-        const abs = path.join(UPLOADS_DIR, rel);
-        fs.unlinkSync(abs);
+        const abs = resolveLocalUploadPath(img.url_original);
+        if (abs) fs.unlinkSync(abs);
       } catch {}
     }
 
@@ -377,9 +392,8 @@ router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUu
 
     // borrar archivo físico
     try {
-      const rel = String(row.url_original).replace(/^\/uploads\//, "");
-      const abs = path.join(UPLOADS_DIR, rel);
-      fs.unlinkSync(abs);
+      const abs = resolveLocalUploadPath(row.url_original);
+      if (abs) fs.unlinkSync(abs);
     } catch {}
 
     // si era primary, reasignar

@@ -13,7 +13,7 @@
     <Transition name="panel-slide">
       <div
         v-if="modelValue"
-        class="fixed inset-y-0 right-0 z-50 w-full sm:max-w-md bg-white shadow-soft-lg flex flex-col"
+        class="fixed inset-y-0 right-0 z-50 w-full sm:max-w-xl lg:max-w-none lg:w-[40vw] lg:min-w-[36rem] bg-white shadow-soft-lg flex flex-col"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
