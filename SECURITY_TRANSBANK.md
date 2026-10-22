@@ -38,15 +38,71 @@ Configurar en cPanel/Passenger, nunca en Git ni en el frontend:
 NODE_ENV=production
 DATABASE_URL=...
 JWT_SECRET=<64 bytes aleatorios o más>
-FRONTEND_URL=https://admin.dulcemaria.hrcastell.com
+ADMIN_ORIGINS=https://admin.dulcemaria.hrcastell.com
+PUBLIC_ORIGINS=https://dulcemaria.hrcastell.com
 PLATFORM_OWNER_EMAIL=<correo autorizado>
 TRUST_PROXY_HOPS=1
 ENABLE_BOOTSTRAP=false
 ```
 
 Después de confirmar el administrador, retirar `ADMIN_PASSWORD` y
-`BOOTSTRAP_TOKEN` del entorno. La recuperación debe ejecutarse mediante un
-comando CLI en una terminal segura, no mediante una URL pública.
+`BOOTSTRAP_TOKEN` del entorno. La recuperación se ejecuta con el CLI desde la
+terminal del hosting, nunca mediante una URL pública (ver más abajo).
+
+## Endurecimiento del backend (variables y comportamientos)
+
+- **Modo seguro por defecto:** si `NODE_ENV` falta o no es `development`/`test`,
+  la API se comporta como producción (cookie Secure, HSTS, errores enmascarados,
+  bootstrap prohibido) y lo advierte al arrancar.
+- **`JWT_SECRET`:** en producción el arranque falla si tiene menos de 43
+  caracteres, parece un valor de ejemplo (`change`, `secret`, `example`, …) o es
+  repetitivo. Generar uno con
+  `node -e "console.log(require('crypto').randomBytes(64).toString('base64url'))"`.
+- **Orígenes:** `ADMIN_ORIGINS` (lista separada por comas) son los únicos
+  orígenes con CORS con credenciales en `/auth` y `/admin` y los únicos
+  aceptados como `Origin` en mutaciones con cookie. `PUBLIC_ORIGINS` reciben CORS
+  sin credenciales en las rutas públicas. Si faltan, se usa `FRONTEND_URL`
+  (comportamiento anterior) con advertencia; el sitio público nunca queda como
+  origen del panel. CORS nunca responde 403 por un Origin desconocido: el retorno
+  de Webpay (POST de formulario desde Transbank) llega a la ruta. Además, en
+  `/auth` y `/admin` se rechazan solicitudes de navegador `same-site`/`cross-site`
+  cuyo Origin no sea del panel (Fetch Metadata), así un subdominio hermano no
+  puede usar la sesión.
+  Pendiente para la integración de pago: montar `express.urlencoded` solo en la
+  ruta de retorno y ajustar `form-action` si la API renderiza la redirección.
+- **Sesión:** cookie `__Host-dm_session` (Secure, Path=/, sin Domain) en
+  producción; ya no se acepta `Authorization: Bearer`. `users.session_version`
+  viaja en el JWT (`sv`): cambiar contraseña, rol o estado activo, y
+  `POST /auth/logout-all`, cierran todas las sesiones del usuario.
+  `POST /auth/logout` borra la cookie aunque el token haya vencido. El login
+  responde igual para cuentas inactivas y contraseñas incorrectas, limita
+  también por cuenta (10 fallos/15 min) y re-hashea hashes heredados.
+- **CLI de administración** (terminal SSH, con las mismas variables que la app):
+  `npm run admin:create-superadmin -- --email <correo>`,
+  `npm run admin:reset-password -- --email <correo>` y
+  `npm run admin:revoke-sessions -- --email <correo>`. La contraseña se pide
+  oculta o se lee desde stdin; nunca se pasa como argumento.
+- **Configuración del Motor de Tarifa:** `/admin/config/:key` solo acepta las
+  claves de la panadería (precio base de torta y energía). La tarifa de respaldo
+  `platform_fee_default_clp` se administra en `/admin/platform-fees/config`,
+  exclusivo de `PLATFORM_OWNER_EMAIL`.
+- **Subidas:** solo JPEG/PNG/WebP verificados por contenido; nombre y extensión
+  los decide el servidor. `/uploads` entrega solo extensiones de imagen con
+  `nosniff`, CSP `sandbox` y caché larga. Revisar `uploads/hero/` del servidor por
+  archivos no-imagen subidos antes de este cambio (ya no se sirven).
+- **Esquema:** la API guarda una huella del esquema en `schema_migration_state`
+  y no repite el DDL si nada cambió. En producción un fallo de sentencia no
+  impide arrancar, pero se registra con su id y SQLSTATE en cada arranque y lo
+  informa `npm run db:validate`; tras corregir la causa, reiniciar una vez con
+  `MIGRATIONS_FORCE=true` y luego quitarla. `MIGRATIONS_STRICT=true` aborta el
+  arranque ante cualquier fallo (por defecto en desarrollo).
+- **Proxy y límites:** `TRUST_PROXY_HOPS` = cantidad de proxies de confianza
+  delante de Node. Si es mayor que la cadena real, `X-Forwarded-For` falsificado
+  evade los límites; si es menor, todos comparten la IP del proxy. Para calibrarlo,
+  arrancar una vez con `TRUST_PROXY_DIAGNOSTIC=true` (registra `req.ip` y la
+  cadena recibida en las primeras 20 solicitudes) y luego quitarlo. Los límites
+  viven en memoria por proceso: con varios procesos de Passenger cada uno cuenta
+  por separado y un reinicio los pone en cero.
 
 En el hosting también se debe:
 

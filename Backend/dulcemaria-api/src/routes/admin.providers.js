@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
+const { validationError } = require("../lib/httpErrors");
+const { searchTerm, optionalQuery } = require("../lib/schemas");
 
 const router = express.Router();
 
@@ -19,8 +21,12 @@ function normalizeString(str) {
 
 // ===== PROVIDERS (Proveedores) =====
 
+const listQuerySchema = z.object({ q: optionalQuery(searchTerm) });
+
 router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const search = String(req.query.q || "").trim();
+  const query = listQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const search = query.data.q || "";
   try {
     const pool = getPool();
     const r = await pool.query(
@@ -41,7 +47,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
     name: z.string().min(1).max(200),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   try {
     const pool = getPool();

@@ -1,32 +1,34 @@
-### Dulce Maria Reposteria - Testing Completo Backend v2.0
+### Dulce María Repostería — pruebas manuales de la API (flujo completo)
 ### Extensión: REST Client (humao.rest-client)
+###
+### NUNCA escribas credenciales reales en este archivo (está en un repo público).
+### Las credenciales se leen del archivo `.env` (ignorado por git) que está junto a
+### este archivo, en la raíz del repo: el mismo del stack Docker local
+### (`cp docker/env.example .env`). Variables usadas: ADMIN_EMAIL y ADMIN_PASSWORD.
+###
+### Autenticación: la API usa SOLO la cookie de sesión HttpOnly (no hay Bearer).
+###   1) Ejecuta "Login": REST Client guarda la cookie y la reenvía sola
+###      (opción rest-client.rememberCookiesForSubsequentRequests, activa por defecto).
+###   2) Toda mutación de /admin (POST/PUT/PATCH/DELETE) debe enviar un Origin
+###      incluido en ADMIN_ORIGINS; sin él la API responde 403.
 
-@baseUrl = https://hrcastell.com
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3NDkxODgwNS03NDg3LTQ4ZDctOTBlZS0wODhmOGU2N2NiN2QiLCJlbWFpbCI6Imhlcm5hbi5jYXN0ZWxsYW5vc0BocmNhc3RlbGwuY29tIiwicm9sZSI6IlNVUEVSQURNSU4iLCJpYXQiOjE3NzEzNTg0NDQsImV4cCI6MTc3MTk2MzI0NH0.jKyFf4-fCER0sI4fxhuoyinptjOMaMgrDkxbRd1M18Q
-@adminEmail = hernan.castellanos@hrcastell.com
-@adminPassword = N@nreh26*
-
-# Variables dinámicas (se actualizan al ejecutar)
-@customerId = 61ab2875-ff9a-4cbe-a068-cf107b8e4a6d
-@productId1 = f3c332bf-a5d5-4eb2-a2cc-03295ab700d2
-@productId2 = f6833f3f-cd98-4803-8c7b-efbf63d15822
-@orderId = a244bc32-2761-4b5f-9117-e4daa102f487
+@baseUrl = http://localhost:4301
+@adminOrigin = http://localhost:4302
+@adminEmail = {{$dotenv ADMIN_EMAIL}}
+@adminPassword = {{$dotenv ADMIN_PASSWORD}}
 
 ########################
-# 1. HEALTH CHECKS
+# 1. HEALTH
 ########################
 
 ### Health Check
 GET {{baseUrl}}/health
 
-### DB Check
-GET {{baseUrl}}/db-check
-
 ########################
-# 2. AUTHENTICATION
+# 2. AUTENTICACIÓN
 ########################
 
-### Login (Actualiza @token)
+### Login (deja la cookie de sesión en REST Client)
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
@@ -36,80 +38,67 @@ Content-Type: application/json
   "password": "{{adminPassword}}"
 }
 
+### Usuario actual
+GET {{baseUrl}}/auth/me
+
 ########################
 # 3. PRODUCTOS
 ########################
 
 ### Listar productos
 GET {{baseUrl}}/admin/products
-Authorization: Bearer {{token}}
 
-### Crear Producto 1: Torta de Chocolate
+### Crear producto 1
 # @name createProduct1
 POST {{baseUrl}}/admin/products
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
   "name": "Torta de Chocolate",
   "description": "Deliciosa torta de chocolate con ganache",
-  "price_clp": 15000,
-  "stock_qty": 20
+  "priceClp": 15000,
+  "stockQty": 20
 }
 
-### Crear Producto 2: Cupcakes Vainilla
+### Crear producto 2
 # @name createProduct2
 POST {{baseUrl}}/admin/products
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
   "name": "Cupcakes de Vainilla",
   "description": "Pack de 6 cupcakes de vainilla con buttercream",
-  "price_clp": 8000,
-  "stock_qty": 30
+  "priceClp": 8000,
+  "stockQty": 30
 }
 
-### Obtener detalle de producto
-GET {{baseUrl}}/admin/products/{{productId1}}
-Authorization: Bearer {{token}}
+### Imágenes del producto 1
+GET {{baseUrl}}/admin/products/{{createProduct1.response.body.product.id}}/images
 
 ########################
-# 4. CUSTOMERS
+# 4. CLIENTES
 ########################
 
-### Listar customers
+### Listar clientes
 GET {{baseUrl}}/admin/customers
-Authorization: Bearer {{token}}
 
-### Crear Customer 1
+### Crear cliente
 # @name createCustomer
 POST {{baseUrl}}/admin/customers
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
-  "full_name": "María González",
+  "fullName": "María González (prueba)",
   "email": "maria.gonzalez@example.com",
   "phone": "+56912345678",
   "address": "Av. Providencia 1234, Santiago"
 }
 
-### Crear Customer 2 (sin email)
-POST {{baseUrl}}/admin/customers
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "full_name": "Juan Pérez",
-  "phone": "+56987654321",
-  "address": "Los Leones 456, Providencia",
-  "notes": "Cliente frecuente"
-}
-
-### Buscar customer por nombre
-GET {{baseUrl}}/admin/customers?search=María
-Authorization: Bearer {{token}}
+### Buscar clientes por texto (email/nombre/teléfono)
+GET {{baseUrl}}/admin/customers?q=María
 
 ########################
 # 5. ÓRDENES
@@ -117,25 +106,18 @@ Authorization: Bearer {{token}}
 
 ### Listar órdenes
 GET {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
 
-### Crear Orden Completa (con items)
+### Crear orden con ítems
 # @name createOrder
 POST {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
-  "customerId": "{{customerId}}",
+  "customerId": "{{createCustomer.response.body.customer.id}}",
   "items": [
-    {
-      "productId": "{{productId1}}",
-      "qty": 2
-    },
-    {
-      "productId": "{{productId2}}",
-      "qty": 3
-    }
+    { "productId": "{{createProduct1.response.body.product.id}}", "qty": 2 },
+    { "productId": "{{createProduct2.response.body.product.id}}", "qty": 3 }
   ],
   "paymentMethod": "TRANSFER",
   "paymentStatus": "PAID",
@@ -143,22 +125,21 @@ Content-Type: application/json
   "deliveryFeeClp": 2500
 }
 
-### Obtener detalle de orden (con items)
-GET {{baseUrl}}/admin/orders/{{orderId}}
-Authorization: Bearer {{token}}
+### Detalle de la orden
+GET {{baseUrl}}/admin/orders/{{createOrder.response.body.order.id}}
 
-### Actualizar estado de orden
-PATCH {{baseUrl}}/admin/orders/{{orderId}}/status
-Authorization: Bearer {{token}}
+### Cambiar estado
+PATCH {{baseUrl}}/admin/orders/{{createOrder.response.body.order.id}}/status
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
   "status": "PREPARING"
 }
 
-### Actualizar estado de pago
-PATCH {{baseUrl}}/admin/orders/{{orderId}}/payment
-Authorization: Bearer {{token}}
+### Cambiar estado de pago
+PATCH {{baseUrl}}/admin/orders/{{createOrder.response.body.order.id}}/payment
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
@@ -166,10 +147,10 @@ Content-Type: application/json
 }
 
 ########################
-# 6. CATÁLOGO PÚBLICO
+# 6. CATÁLOGO PÚBLICO (sin sesión)
 ########################
 
-### Ver catálogo público (sin autenticación)
+### Catálogo público
 GET {{baseUrl}}/catalog/products
 
 ########################
@@ -178,122 +159,67 @@ GET {{baseUrl}}/catalog/products
 
 ### Reporte diario
 GET {{baseUrl}}/admin/reports/daily?date=2026-02-07
-Authorization: Bearer {{token}}
 
 ########################
-# 8. TESTING DE VALIDACIONES
+# 8. VALIDACIONES (deben fallar)
 ########################
 
-### Error: Crear orden sin customer_id (400)
+### 400: orden sin customerId (error como texto en español + details)
 POST {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
   "items": [
-    {
-      "product_id": "{{productId1}}",
-      "qty": 1
-    }
+    { "productId": "{{createProduct1.response.body.product.id}}", "qty": 1 }
   ]
 }
 
-### Error: Crear orden con producto inexistente (404)
+### 400: producto inexistente
 POST {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
+Origin: {{adminOrigin}}
 Content-Type: application/json
 
 {
-  "customer_id": "{{customerId}}",
+  "customerId": "{{createCustomer.response.body.customer.id}}",
   "items": [
-    {
-      "product_id": "00000000-0000-0000-0000-000000000000",
-      "qty": 1
-    }
+    { "productId": "00000000-0000-4000-8000-000000000000", "qty": 1 }
   ]
 }
 
-### Error: Crear orden sin stock suficiente (400)
-POST {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
+### 403: mutación sin Origin del panel
+POST {{baseUrl}}/admin/customers
 Content-Type: application/json
 
 {
-  "customer_id": "{{customerId}}",
-  "items": [
-    {
-      "product_id": "{{productId1}}",
-      "qty": 999
-    }
-  ]
+  "fullName": "No debería crearse"
 }
 
-########################
-# 9. TESTING DE RATE LIMITING
-########################
-
-### Intentar login 6 veces seguidas (rate limit)
+### 401: login con contraseña incorrecta (repetirlo activa el límite por IP y por cuenta)
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-  "email": "wrong@email.com",
-  "password": "wrongpass"
+  "email": "{{adminEmail}}",
+  "password": "contrasena-incorrecta"
 }
 
 ########################
-# 10. TESTING DE NUEVOS CAMPOS
+# 9. CIERRE DE SESIÓN
 ########################
 
-### Crear orden con todos los campos nuevos
-POST {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
-Content-Type: application/json
+### Cerrar sesión en este cliente (borra la cookie aunque esté vencida)
+POST {{baseUrl}}/auth/logout
+Origin: {{adminOrigin}}
 
-{
-  "customerId": "{{customerId}}",
-  "items": [
-    {
-      "productId": "{{productId1}}",
-      "qty": 1
-    }
-  ],
-  "paymentMethod": "CASH",
-  "paymentStatus": "PENDING",
-  "deliveryMethod": "PICKUP",
-  "deliveryFeeClp": 0
-}
-
-### Verificar que order_no se genera automáticamente
-GET {{baseUrl}}/admin/orders
-Authorization: Bearer {{token}}
+### Cerrar sesión en TODOS los dispositivos (requiere sesión activa)
+POST {{baseUrl}}/auth/logout-all
+Origin: {{adminOrigin}}
 
 ########################
-# NOTAS DE USO
+# NOTAS
 ########################
-
-# 1. Ejecuta en orden:
-#    - Login (para obtener token)
-#    - Crear productos (copia los IDs)
-#    - Crear customer (copia el ID)
-#    - Actualiza las variables @productId1, @productId2, @customerId
-#    - Crear orden
-#    - Copia el @orderId
-#    - Prueba actualizaciones de estado
-
-# 2. Para actualizar variables automáticamente:
-#    - Después de crear producto, copia el "id" del response
-#    - Pégalo en la variable @productId1 o @productId2
-#    - Haz lo mismo con customer y order
-
-# 3. Campos nuevos que se probaron:
-#    - order_no (generado automáticamente)
-#    - payment_status (PENDING, PAID, FAILED, REFUNDED)
-#    - payment_method (TRANSFER, CASH, ONLINE)
-#    - delivery_method (PICKUP, DELIVERY)
-#    - delivery_fee_clp
-
-# 4. Rate limiting:
-#    - Login: 5 intentos cada 15 min
-#    - Public API: 100 requests cada 15 min
-#    - Admin API: 200 requests cada 15 min
+# - Límites de login: 10 intentos / 5 min por IP y 10 fallos / 15 min por cuenta.
+# - Errores: { ok: false, error: "<texto en español>", details?: {...} }.
+# - Producción: cambia @baseUrl/@adminOrigin a los dominios reales y usa una
+#   cuenta de prueba; jamás pegues contraseñas aquí.

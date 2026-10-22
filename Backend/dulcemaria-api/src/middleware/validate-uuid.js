@@ -1,11 +1,26 @@
 /**
  * UUID Validation Middleware
- * 
+ *
  * Valida que los parámetros de ruta sean UUIDs válidos antes de procesarlos.
  * Esto previene path traversal y otros ataques de manipulación de paths.
  */
 
 const { z } = require("zod");
+
+const uuidSchema = z.string().uuid();
+
+function checkUuidParam(req, res, paramName) {
+  const value = req.params[paramName];
+  if (!value) {
+    res.status(400).json({ ok: false, error: `Falta el parámetro ${paramName}.` });
+    return false;
+  }
+  if (!uuidSchema.safeParse(value).success) {
+    res.status(400).json({ ok: false, error: `Parámetro ${paramName} inválido: debe ser un UUID.` });
+    return false;
+  }
+  return true;
+}
 
 /**
  * Valida que un parámetro de ruta sea un UUID válido
@@ -13,26 +28,7 @@ const { z } = require("zod");
  */
 function validateUuidParam(paramName) {
   return (req, res, next) => {
-    const value = req.params[paramName];
-    
-    if (!value) {
-      return res.status(400).json({
-        ok: false,
-        error: `Parameter ${paramName} is required`,
-      });
-    }
-
-    const uuidSchema = z.string().uuid();
-    const result = uuidSchema.safeParse(value);
-
-    if (!result.success) {
-      return res.status(400).json({
-        ok: false,
-        error: `Invalid ${paramName}: must be a valid UUID`,
-      });
-    }
-
-    next();
+    if (checkUuidParam(req, res, paramName)) next();
   };
 }
 
@@ -42,27 +38,9 @@ function validateUuidParam(paramName) {
  */
 function validateUuidParams(...paramNames) {
   return (req, res, next) => {
-    const uuidSchema = z.string().uuid();
-    
     for (const paramName of paramNames) {
-      const value = req.params[paramName];
-      
-      if (!value) {
-        return res.status(400).json({
-          ok: false,
-          error: `Parameter ${paramName} is required`,
-        });
-      }
-
-      const result = uuidSchema.safeParse(value);
-      if (!result.success) {
-        return res.status(400).json({
-          ok: false,
-          error: `Invalid ${paramName}: must be a valid UUID`,
-        });
-      }
+      if (!checkUuidParam(req, res, paramName)) return;
     }
-
     next();
   };
 }

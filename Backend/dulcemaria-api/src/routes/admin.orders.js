@@ -2,264 +2,270 @@ const express = require("express");
 const { z } = require("zod");
 const crypto = require("crypto");
 
-const { getPool } = require("../db");
-const { requireRole } = require("../middleware/auth");
+const { getPool, withTransaction } = require("../db");
+const { requireRole, requirePermission } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 const { evaluateAndChargeFee } = require("../lib/platformFeeEngine");
+const { validationError, sendError, appError } = require("../lib/httpErrors");
+const { clpAmount, isoDateOrDateTime, optionalQuery, searchTerm } = require("../lib/schemas");
+const {
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  PAYMENT_METHODS,
+  MANUAL_PAYMENT_METHODS,
+  DELIVERY_METHODS,
+  decidePaymentStatusChange,
+  validateNewOrderState,
+  staffOrderRestrictions,
+  describeOrderVocabulary,
+} = require("../lib/orderStatus");
+const { resolveOrderLines, loadOrderLines, insertOrderLines, planOrderEdit, computeOrderTotals } = require("../lib/orderLines");
+const { reserveOrderStock, adjustOrderStockForEdit } = require("../lib/orderStock");
+const { recordOrderEvent, listOrderEvents } = require("../lib/orderEvents");
+const { lockOrder, applyPaymentChange, applyStatusChange } = require("../lib/orderLifecycle");
+const { listTargetPayments } = require("../lib/payments/adminOps");
+const {
+  SANTIAGO_TZ,
+  santiagoToday,
+  validateOrderDate,
+  resolveDateRangeFilter,
+  buildTimestampRangeClauses,
+} = require("../lib/santiagoTime");
 
 const router = express.Router();
 
-const ORDER_STATUS = ["PENDING_PAYMENT","PAID","PREPARING","READY","DELIVERED","CANCELLED"];
-const PAYMENT_STATUS = ["PENDING","PAID","FAILED","REFUNDED"];
-const PAYMENT_METHOD = ["TRANSFER","CASH","ONLINE"];
-const DELIVERY_METHOD = ["PICKUP","DELIVERY"];
+// Límites de validación de la frontera HTTP.
+const MAX_ORDER_LINES = 100;
+const MAX_TOPPINGS_PER_LINE = 20;
+const MAX_LINE_QTY = 10000;
+const MAX_NOTE_CHARS = 300;
 
-/**
- * Valida un array de líneas {productId, qty, variantId?, toppings?} contra
- * products/product_variants/product_toppings, y DESCUENTA el stock
- * correspondiente (por variante si aplica, si no por producto) dentro de la
- * transacción del `client` dado. Usado tanto por POST / (crear) como por
- * PUT /:id (editar) — en edición, el caller debe restituir el stock de los
- * items VIEJOS (ver restoreOrderItemsStock) antes de llamar a esto con la
- * lista NUEVA, para no perder ni duplicar inventario.
- *
- * Devuelve { orderItemsData, subtotal }. Lanza si algo no es válido
- * (producto/variante/topping inexistente, inactivo, o sin stock
- * suficiente) — el caller debe hacer ROLLBACK de toda la transacción.
- */
-async function resolveAndReserveOrderItems(client, items) {
-  const productIds = items.map((i) => i.productId);
-  const pr = await client.query(
-    `SELECT id, name, price_clp, stock_qty, is_active
-     FROM products
-     WHERE id = ANY($1::uuid[])
-     FOR UPDATE`,
-    [productIds]
-  );
-  const productsMap = new Map(pr.rows.map((p) => [p.id, p]));
+const ALL_ROLES = ["SUPERADMIN", "ADMIN", "STAFF"];
+const ADMIN_ROLES = ["SUPERADMIN", "ADMIN"];
+const ISO_DATE_INPUT = /^\d{4}-\d{2}-\d{2}$/;
 
-  const variantIds = items.map((i) => i.variantId).filter(Boolean);
-  let variantsMap = new Map();
-  if (variantIds.length > 0) {
-    const vr = await client.query(
-      `SELECT id, product_id, name, price_override_clp, stock_qty, is_active
-       FROM product_variants
-       WHERE id = ANY($1::uuid[])
-       FOR UPDATE`,
-      [variantIds]
-    );
-    variantsMap = new Map(vr.rows.map((v) => [v.id, v]));
-  }
-
-  const allToppingIds = items.flatMap((i) => i.toppings);
-  let toppingsMap = new Map();
-  if (allToppingIds.length > 0) {
-    const tr = await client.query(
-      `SELECT id, product_id, name, price_clp, type
-       FROM product_toppings
-       WHERE id = ANY($1::uuid[])`,
-      [allToppingIds]
-    );
-    toppingsMap = new Map(tr.rows.map((t) => [t.id, t]));
-  }
-
-  let subtotal = 0;
-  const orderItemsData = [];
-
-  for (const it of items) {
-    const p = productsMap.get(it.productId);
-    if (!p) throw new Error(`Producto no encontrado: ${it.productId}`);
-    if (!p.is_active) throw new Error(`Producto inactivo: ${p.name}`);
-
-    let unitPrice = Number(p.price_clp);
-    let variantName = null;
-    let variantId = null;
-
-    if (it.variantId) {
-      const v = variantsMap.get(it.variantId);
-      if (!v) throw new Error(`Variante no encontrada: ${it.variantId}`);
-      if (v.product_id !== p.id) throw new Error(`Variante ${v.name} no pertenece a ${p.name}`);
-      if (!v.is_active) throw new Error(`Variante inactiva: ${v.name}`);
-
-      variantId = v.id;
-      variantName = v.name;
-
-      if (v.price_override_clp !== null) {
-        unitPrice = Number(v.price_override_clp);
-      }
-
-      const available = Number(v.stock_qty);
-      if (it.qty > available) {
-        throw new Error(`Stock insuficiente para "${p.name} - ${v.name}". Disponible: ${available}`);
-      }
-
-      await client.query(
-        `UPDATE product_variants SET stock_qty = stock_qty - $1, updated_at=NOW() WHERE id=$2`,
-        [it.qty, v.id]
-      );
-    } else {
-      const available = Number(p.stock_qty);
-      if (it.qty > available) {
-        throw new Error(`Stock insuficiente para "${p.name}". Disponible: ${available}`);
-      }
-      await client.query(
-        `UPDATE products SET stock_qty = stock_qty - $1, updated_at=NOW() WHERE id=$2`,
-        [it.qty, p.id]
-      );
-    }
-
-    const selectedToppings = [];
-    for (const tid of it.toppings) {
-      const t = toppingsMap.get(tid);
-      if (!t) throw new Error(`Topping no encontrado: ${tid}`);
-      if (t.product_id !== p.id) throw new Error(`Topping ${t.name} no pertenece a ${p.name}`);
-
-      if (t.price_clp > 0) {
-        unitPrice += Number(t.price_clp);
-      }
-      selectedToppings.push({ id: t.id, name: t.name, price: t.price_clp });
-    }
-
-    const lineTotal = unitPrice * it.qty;
-    subtotal += lineTotal;
-
-    orderItemsData.push({
-      id: crypto.randomUUID(),
-      productId: p.id,
-      productName: p.name,
-      variantId,
-      variantName,
-      selectedToppings: selectedToppings.length ? JSON.stringify(selectedToppings) : null,
-      unitPrice,
-      qty: it.qty,
-      lineTotal,
-    });
-  }
-
-  return { orderItemsData, subtotal };
+/** Código visible de una orden del panel (24 caracteres; aleatorio para no chocar en el mismo milisegundo). */
+function newAdminOrderCode() {
+  return `ORD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 }
 
-/**
- * Devuelve al stock las cantidades de las líneas YA GUARDADAS de una orden —
- * usado en PUT /:id antes de borrar y re-reservar con la lista nueva, para
- * no perder inventario en cada edición.
- */
-async function restoreOrderItemsStock(client, orderId) {
-  const oldItems = await client.query(
-    `SELECT product_id, variant_id, qty FROM order_items WHERE order_id = $1`,
-    [orderId]
-  );
-  for (const item of oldItems.rows) {
-    if (item.variant_id) {
-      await client.query(
-        `UPDATE product_variants SET stock_qty = stock_qty + $1, updated_at=NOW() WHERE id=$2`,
-        [item.qty, item.variant_id]
-      );
-    } else {
-      await client.query(
-        `UPDATE products SET stock_qty = stock_qty + $1, updated_at=NOW() WHERE id=$2`,
-        [item.qty, item.product_id]
-      );
-    }
+const lineSchema = z.object({
+  productId: z.string().uuid(),
+  qty: z.number().int().positive().max(MAX_LINE_QTY),
+  variantId: z.string().uuid().optional().nullable(),
+  toppings: z.array(z.string().uuid()).max(MAX_TOPPINGS_PER_LINE).optional().default([]), // IDs de toppings
+});
+
+function toLineItems(items) {
+  return items.map((item) => ({
+    productId: item.productId,
+    variantId: item.variantId || null,
+    qty: item.qty,
+    toppings: item.toppings || [],
+  }));
+}
+
+function actorOf(req) {
+  return { sub: req.user?.sub, email: req.user?.email, role: req.user?.role };
+}
+
+function rejectDecision(decision) {
+  return appError(decision.httpStatus, decision.code, decision.error);
+}
+
+// --- Guardas de pagos en línea (unidad de pagos, payments-design §5.5) -------
+// Se bloquean los intentos DESPUÉS de la orden (orden de bloqueo fijo:
+// orders → payments → products → variants).
+const MANAGED_ATTEMPT_STATUSES = ["COMMITTING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"];
+
+async function lockOrderAttempts(client, orderId) {
+  const r = await client.query(`SELECT id, status FROM payments WHERE order_id = $1 ORDER BY attempt_no FOR UPDATE`, [orderId]);
+  return r.rows;
+}
+
+/** Cancelar con un commit de Webpay en curso dejaría dinero sin orden: 409. */
+function assertNoPaymentInProgress(attempts) {
+  if (attempts.some((a) => a.status === "COMMITTING")) {
+    throw appError(409, "PAYMENT_IN_PROGRESS", "Hay un pago en línea confirmándose en este momento; espera unos segundos y vuelve a intentar.");
   }
 }
 
+/** Un pago manual sobre una orden en línea ya gestionada por la pasarela: 409. */
+function assertNotManagedOnline(order, attempts) {
+  if (order.payment_method === "ONLINE" && attempts.some((a) => MANAGED_ATTEMPT_STATUSES.includes(a.status))) {
+    throw appError(
+      409,
+      "ONLINE_PAYMENT_MANAGED",
+      "El pago en línea de esta orden ya fue procesado (o se está confirmando) por la pasarela: concilia o reembolsa desde Pagos."
+    );
+  }
+}
+
+function manualPaymentData(to) {
+  return to === "PAID" ? { tag: "ADMIN_MANUAL_PAYMENT" } : undefined;
+}
+
+function stateResponse(order, { noop = false } = {}) {
+  return {
+    ok: true,
+    noop,
+    order: {
+      id: order.id,
+      order_no: order.order_no,
+      order_code: order.order_code,
+      status: order.status,
+      payment_status: order.payment_status,
+      payment_method: order.payment_method,
+      total_clp: order.total_clp,
+      stock_reservation_status: order.stock_reservation_status,
+      cancellation_source: order.cancellation_source,
+      paid_at: order.paid_at,
+      updated_at: order.updated_at,
+    },
+  };
+}
+
+const listQuerySchema = z.object({
+  from: optionalQuery(isoDateOrDateTime),
+  to: optionalQuery(isoDateOrDateTime),
+  status: optionalQuery(z.enum(ORDER_STATUSES)),
+  q: optionalQuery(searchTerm),
+});
+
 /**
- * GET /admin/orders?from&to&status
- * Rango: from/to pueden ser ISO (2026-02-06) o timestamp (2026-02-06T00:00:00Z)
+ * GET /admin/orders?from&to&status&q
+ * from/to: fecha AAAA-MM-DD (día de Santiago; `to` incluye ese día) o
+ * instante ISO (fin exclusivo). q: código de orden, número, cliente o unidad.
  */
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const from = String(req.query.from || "").trim();
-  const to = String(req.query.to || "").trim();
-  const status = String(req.query.status || "").trim();
+router.get("/", requireRole(...ALL_ROLES), requirePermission("orders", "canView"), async (req, res) => {
+  const query = listQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const { status, q } = query.data;
 
   try {
-    const pool = getPool();
-
-    const where = [];
-    const vals = [];
-    let n = 1;
-
-    if (from) { where.push(`o.created_at >= $${n++}::timestamptz`); vals.push(from); }
-    if (to) { where.push(`o.created_at < $${n++}::timestamptz`); vals.push(to); }
+    const range = resolveDateRangeFilter({ from: query.data.from, to: query.data.to });
+    const { clauses, values } = buildTimestampRangeClauses("o.created_at", range, 1);
+    const where = [...clauses];
+    const vals = [...values];
+    let n = vals.length + 1;
     if (status) { where.push(`o.status = $${n++}`); vals.push(status); }
+    if (q) {
+      const like = `%${q}%`;
+      const conditions = [
+        `o.order_code ILIKE $${n}`,
+        `c.full_name ILIKE $${n}`,
+        `c.phone ILIKE $${n}`,
+        `c.email ILIKE $${n}`,
+        `o.residency_unit ILIKE $${n}`,
+      ];
+      vals.push(like);
+      n++;
+      if (/^#?\d{1,15}$/.test(q)) {
+        conditions.push(`o.order_no = $${n++}::bigint`);
+        vals.push(q.replace("#", ""));
+      }
+      where.push(`(${conditions.join(" OR ")})`);
+    }
 
-    const sql = `
-      SELECT
-        o.id, o.order_no, o.status, o.payment_status, o.payment_method, o.delivery_method,
-        o.subtotal_clp, o.delivery_fee_clp, o.total_clp, o.created_at,
-        c.id AS customer_id, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone
-      FROM orders o
-      JOIN customers c ON c.id = o.customer_id
-      ${where.length ? "WHERE " + where.join(" AND ") : ""}
-      ORDER BY o.created_at DESC
-      LIMIT 1000000000
-    `;
-
-    const r = await pool.query(sql, vals);
+    const r = await getPool().query(
+      `SELECT
+         o.id, o.order_no, o.order_code, o.status, o.payment_status, o.payment_method, o.delivery_method,
+         o.subtotal_clp, o.delivery_fee_clp, o.total_clp, o.created_at,
+         o.stock_reservation_status, o.residency_unit, o.residency_declared_at, o.delivery_date, o.paid_at,
+         o.payment_provider, o.payment_expires_at, o.channel,
+         c.id AS customer_id, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone,
+         c.source AS customer_source
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       ${where.length ? "WHERE " + where.join(" AND ") : ""}
+       ORDER BY o.created_at DESC
+       LIMIT 1000000000`,
+      vals
+    );
     return res.json({ ok: true, items: r.rows });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+    return sendError(res, e);
   }
 });
 
 /**
+ * GET /admin/orders/statuses
+ * Vocabularios (con etiquetas en español) y transiciones permitidas: la
+ * única definición que deben usar las pantallas.
+ */
+router.get("/statuses", requireRole(...ALL_ROLES), (req, res) => {
+  return res.json({ ok: true, ...describeOrderVocabulary() });
+});
+
+/**
  * GET /admin/orders/pending-notifications
- * Returns pending orders created in last 24h for real-time admin notification
+ * Pedidos pendientes de las últimas 24 h (órdenes y tortas) para el aviso en
+ * tiempo real del panel.
  *
  * Registrada ANTES de /:id a propósito: Express matchea rutas en orden de
  * registro, así que si esta fuera declarada después, /:id la capturaría
  * primero (tratando "pending-notifications" como el :id) y validateUuidParam
  * la rechazaría con 400 en cada poll.
  */
-router.get("/pending-notifications", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/pending-notifications", requireRole(...ALL_ROLES), requirePermission("orders", "canView"), async (req, res) => {
   try {
     const pool = getPool();
+    // Pedidos que requieren atención: los manuales pendientes y los pagados en
+    // línea en las últimas 24 h. Un pedido en línea impago (carrito en espera
+    // del pago) NO avisa: vence solo si no se paga.
     const r = await pool.query(
-      `SELECT o.id, o.order_no, o.status, o.payment_status, o.total_clp, o.created_at,
-        c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT o.id, o.order_no, o.order_code, o.status, o.payment_status, o.payment_method, o.payment_provider,
+              o.total_clp, o.created_at, o.paid_at, o.residency_unit,
+              c.full_name AS customer_name, c.phone AS customer_phone
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
-       WHERE o.status = 'PENDING_PAYMENT'
-         AND o.created_at >= NOW() - INTERVAL '24 hours'
-       ORDER BY o.created_at DESC
+       WHERE (o.status = 'PENDING_PAYMENT' AND o.payment_method <> 'ONLINE' AND o.created_at >= NOW() - INTERVAL '24 hours')
+          OR (o.payment_method = 'ONLINE' AND o.status = 'PAID' AND o.payment_status = 'PAID' AND o.paid_at >= NOW() - INTERVAL '24 hours')
+       ORDER BY COALESCE(o.paid_at, o.created_at) DESC
        LIMIT 50`
     );
 
-    // Also check cake_orders
+    // Tortas: se crean en PENDING_PAYMENT (antes se buscaba 'PENDING', que
+    // nunca se escribía, y las tortas web no avisaban — B-20). Las de abono en
+    // línea avisan cuando el abono queda pagado (pasan a CONFIRMED).
     const cakeR = await pool.query(
-      `SELECT co.id, co.order_number, co.status, co.total_price_clp, co.created_at,
-        co.customer_name, co.customer_phone
+      `SELECT co.id, co.order_number, co.status, co.total_price_clp, co.deposit_clp, co.payment_method, co.deposit_status,
+              co.created_at, co.deposit_paid_at, co.customer_name, co.customer_phone, co.residency_unit
        FROM cake_orders co
-       WHERE co.status = 'PENDING'
-         AND co.created_at >= NOW() - INTERVAL '24 hours'
-       ORDER BY co.created_at DESC
+       WHERE (co.status = 'PENDING_PAYMENT' AND co.payment_method <> 'ONLINE' AND co.created_at >= NOW() - INTERVAL '24 hours')
+          OR (co.payment_method = 'ONLINE' AND co.deposit_status = 'PAID' AND co.status = 'CONFIRMED'
+              AND co.deposit_paid_at >= NOW() - INTERVAL '24 hours')
+       ORDER BY COALESCE(co.deposit_paid_at, co.created_at) DESC
        LIMIT 50`
     );
+
+    const review = await pool.query(`SELECT COUNT(*)::int AS n FROM payments WHERE status = 'NEEDS_REVIEW'`);
 
     return res.json({
       ok: true,
       orders: r.rows,
       cake_orders: cakeR.rows,
-      total: r.rowCount + cakeR.rowCount
+      total: r.rowCount + cakeR.rowCount,
+      payments_needing_review: review.rows[0].n,
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+    return sendError(res, e);
   }
 });
 
 /**
  * GET /admin/orders/:id
- * Detalle de una venta (cabecera + items)
+ * Detalle de una venta (cabecera + items + historial de cambios)
  */
-router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+router.get("/:id", requireRole(...ALL_ROLES), validateUuidParam("id"), requirePermission("orders", "canView"), async (req, res) => {
   const { id } = req.params;
 
   try {
     const pool = getPool();
 
     const o = await pool.query(
-      `SELECT o.*, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone, c.address AS customer_address
+      `SELECT o.*, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone,
+              c.address AS customer_address, c.source AS customer_source
        FROM orders o
        JOIN customers c ON c.id=o.customer_id
        WHERE o.id=$1`,
@@ -267,415 +273,422 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
     );
 
     if (o.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
+    // El token de acceso del cliente no viaja en el detalle (el enlace se pide en POST /admin/payments/links).
+    const { public_token: publicToken, ...order } = o.rows[0];
 
     const items = await pool.query(
       `SELECT id, product_id, product_name_snapshot, unit_price_clp, qty, line_total_clp, created_at,
               variant_id, variant_name, selected_toppings
        FROM order_items
        WHERE order_id=$1
-       ORDER BY created_at ASC`,
+       ORDER BY created_at ASC, id ASC`,
       [id]
     );
 
-    return res.json({ ok: true, order: o.rows[0], items: items.rows });
+    const events = await listOrderEvents(pool, { orderId: id, limit: 100 });
+    const payments = await listTargetPayments({ kind: "ORDER", id });
+
+    return res.json({ ok: true, order: { ...order, has_payment_link: Boolean(publicToken) }, items: items.rows, events, payments });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+    return sendError(res, e);
   }
+});
+
+const createSchema = z.object({
+  customerId: z.string().uuid(),
+  items: z.array(lineSchema).min(1).max(MAX_ORDER_LINES),
+
+  deliveryMethod: z.enum(DELIVERY_METHODS).default("PICKUP"),
+  deliveryFeeClp: clpAmount().default(0),
+
+  paymentMethod: z.enum(PAYMENT_METHODS).default("CASH"),
+  paymentStatus: z.enum(PAYMENT_STATUSES).default("PAID"),
+
+  status: z.enum(ORDER_STATUSES).default("DELIVERED"),
+
+  discountAmountClp: clpAmount().default(0),
+  finalPriceOverrideClp: clpAmount().optional().nullable(),
+
+  // Fecha real de la venta (para registrar ventas de días anteriores sin
+  // tocar la BD a mano). Opcional: si no viene, created_at usa NOW().
+  orderDate: z.string().regex(ISO_DATE_INPUT, "Fecha inválida: usa AAAA-MM-DD.").optional(),
 });
 
 /**
  * POST /admin/orders
- * Crea venta (transaccional): valida stock, descuenta stock, inserta orden + items
+ * Venta del panel (modelo POS): valida y cotiza en el servidor, descuenta el
+ * stock (reserva CONSUMED) e inserta orden + items + evento en una sola
+ * transacción. Si nace DELIVERED (el valor por defecto) cobra la tarifa de
+ * plataforma en esa misma transacción.
+ * STAFF no puede fijar precio final, descuentos ni otra fecha (B-10).
  */
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const schema = z.object({
-    customerId: z.string().uuid(),
-    items: z.array(z.object({
-      productId: z.string().uuid(),
-      qty: z.number().int().positive(),
-      variantId: z.string().uuid().optional().nullable(),
-      toppings: z.array(z.string().uuid()).optional().default([]), // IDs de toppings
-    })).min(1),
+router.post("/", requireRole(...ALL_ROLES), requirePermission("orders", "canCreate"), async (req, res) => {
+  const parsed = createSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  const d = parsed.data;
 
-    deliveryMethod: z.enum(DELIVERY_METHOD).default("PICKUP"),
-    deliveryFeeClp: z.number().int().nonnegative().default(0),
-
-    paymentMethod: z.enum(PAYMENT_METHOD).default("CASH"),
-    paymentStatus: z.enum(PAYMENT_STATUS).default("PAID"),
-
-    status: z.enum(ORDER_STATUS).default("DELIVERED"),
-
-    discountAmountClp: z.number().int().nonnegative().default(0),
-    finalPriceOverrideClp: z.number().int().nonnegative().optional().nullable(),
-
-    // Fecha real de la venta (para registrar ventas de días anteriores sin
-    // tocar la BD a mano). Opcional: si no viene, created_at usa NOW() como siempre.
-    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  });
-
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-
-  const {
-    customerId, items, deliveryMethod, deliveryFeeClp, paymentMethod, paymentStatus, status,
-    discountAmountClp, finalPriceOverrideClp, orderDate
-  } = parsed.data;
-
-  const pool = getPool();
-  let client;
-  try {
-    client = await pool.connect();
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  const today = santiagoToday();
+  if (req.user.role === "STAFF") {
+    const problems = staffOrderRestrictions({
+      finalPriceOverrideClp: d.finalPriceOverrideClp,
+      discountAmountClp: d.discountAmountClp,
+      orderDate: d.orderDate,
+      today,
+    });
+    if (problems.length) return res.status(403).json({ ok: false, error: problems.join(" "), code: "PERMISSION_DENIED" });
   }
+  if (d.orderDate) {
+    const dateCheck = validateOrderDate(d.orderDate, { today });
+    if (!dateCheck.ok) return res.status(400).json({ ok: false, error: dateCheck.error, code: "VALIDATION_ERROR" });
+  }
+  const initialState = validateNewOrderState({ status: d.status, payment_status: d.paymentStatus, payment_method: d.paymentMethod });
+  if (!initialState.ok) return res.status(400).json({ ok: false, error: initialState.error, code: "INVALID_ORDER_STATE" });
 
   try {
-    await client.query("BEGIN");
+    const created = await withTransaction(async (client) => {
+      const c = await client.query("SELECT id FROM customers WHERE id=$1 LIMIT 1", [d.customerId]);
+      if (c.rowCount === 0) throw appError(400, "CUSTOMER_NOT_FOUND", "Cliente no existe");
 
-    const c = await client.query("SELECT id FROM customers WHERE id=$1 LIMIT 1", [customerId]);
-    if (c.rowCount === 0) throw new Error("Cliente no existe");
+      const { lines, subtotal } = await resolveOrderLines(client, toLineItems(d.items), { allowToppings: true });
+      const totals = computeOrderTotals({
+        subtotal,
+        deliveryFeeClp: d.deliveryFeeClp,
+        discountAmountClp: d.discountAmountClp,
+        finalPriceOverrideClp: d.finalPriceOverrideClp,
+      });
 
-    const { orderItemsData, subtotal } = await resolveAndReserveOrderItems(client, items);
+      // Fecha: la del día elegido (calendario de Chile) con la hora actual de
+      // Chile; nunca depende de la zona horaria de la sesión de PostgreSQL.
+      const ts = await client.query(
+        `SELECT COALESCE(($1::date + (NOW() AT TIME ZONE '${SANTIAGO_TZ}')::time) AT TIME ZONE '${SANTIAGO_TZ}', NOW()) AS created_at`,
+        [d.orderDate ?? null]
+      );
+      const createdAt = ts.rows[0].created_at;
 
-    // Final Totals
-    const delivery = Number(deliveryFeeClp || 0);
-    const discount = Number(discountAmountClp || 0);
-    let total = subtotal + delivery - discount;
-    if (total < 0) total = 0;
-
-    // Apply Override if exists
-    if (finalPriceOverrideClp !== undefined && finalPriceOverrideClp !== null) {
-      total = finalPriceOverrideClp;
-    }
-
-    // Insert order
-    const orderId = crypto.randomUUID();
-    const orderCode = `ORD-${Date.now()}`;
-
-    // OJO con la fecha: `$::date + CURRENT_TIME` (la versión anterior de esto)
-    // combina una fecha-calendario CHILENA con el offset de CURRENT_TIME, que
-    // refleja el timezone de la SESIÓN de Postgres (normalmente UTC, no
-    // Chile) — de noche en Chile, UTC ya cayó en el día siguiente, así que el
-    // resultado quedaba corrido un día para atrás al mostrarse de vuelta en
-    // hora chilena. Se arma la hora actual explícitamente en America/Santiago
-    // (NOW() AT TIME ZONE ...) y se reinterpreta el combinado como hora
-    // chilena otra vez — nunca depende del timezone que tenga configurado el
-    // servidor de Postgres.
-    const o = await client.query(
-      `INSERT INTO orders (
-          id, order_code, customer_id, status, payment_status, payment_method, delivery_method,
-          subtotal_clp, delivery_fee_clp, discount_amount_clp, final_price_override_clp, total_clp,
-          created_at, updated_at
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE(($13::date + (NOW() AT TIME ZONE 'America/Santiago')::time) AT TIME ZONE 'America/Santiago', NOW()),NOW())
-       RETURNING id, order_no, order_code, status, total_clp`,
-      [
-        orderId, orderCode, customerId, status, paymentStatus, paymentMethod, deliveryMethod,
-        subtotal, delivery, discount, finalPriceOverrideClp ?? null, total, orderDate ?? null
-      ]
-    );
-
-    // Insert items
-    for (const item of orderItemsData) {
-      await client.query(
-        `INSERT INTO order_items (
-           id, order_id, product_id, product_name_snapshot, variant_id, variant_name, selected_toppings,
-           unit_price_clp, qty, line_total_clp, created_at
+      const orderId = crypto.randomUUID();
+      const o = await client.query(
+        `INSERT INTO orders (
+            id, order_code, customer_id, status, payment_status, payment_method, delivery_method,
+            subtotal_clp, delivery_fee_clp, discount_amount_clp, final_price_override_clp, total_clp,
+            paid_at, created_at, updated_at
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+         RETURNING id, order_no, order_code, status, payment_status, total_clp`,
         [
-          item.id, orderId, item.productId, item.productName, item.variantId, item.variantName, item.selectedToppings,
-          item.unitPrice, item.qty, item.lineTotal
+          orderId, newAdminOrderCode(), d.customerId, d.status, d.paymentStatus, d.paymentMethod, d.deliveryMethod,
+          totals.subtotal, totals.deliveryFee, totals.discount, totals.finalPriceOverride, totals.total,
+          d.paymentStatus === "PAID" ? createdAt : null, createdAt,
         ]
       );
-    }
+      await insertOrderLines(client, orderId, lines);
 
-    // Motor de Tarifa: si la orden nace ya cerrada (status=DELIVERED es el
-    // default — modelo POS, la mayoría de las órdenes se cargan así), se
-    // cobra la tarifa de plataforma en la MISMA transacción. Esto garantiza
-    // que jamás pueda quedar una orden DELIVERED sin su fila de cobro.
-    const createdOrder = o.rows[0];
-    if (createdOrder.status === "DELIVERED") {
-      await evaluateAndChargeFee(client, createdOrder);
-    }
+      // Venta del panel: el stock se descuenta al crearla (CONSUMED).
+      const stock = await reserveOrderStock(client, orderId, { target: "CONSUMED" });
 
-    await client.query("COMMIT");
+      await recordOrderEvent(client, {
+        orderId,
+        type: "ORDER_CREATED",
+        to: d.status,
+        actor: actorOf(req),
+        source: "ADMIN",
+        data: {
+          channel: "ADMIN",
+          payment_status: d.paymentStatus,
+          payment_method: d.paymentMethod,
+          total_clp: totals.total,
+          stock: stock.to,
+          ...(d.orderDate ? { order_date: d.orderDate } : {}),
+          ...(totals.finalPriceOverride !== null ? { final_price_override_clp: totals.finalPriceOverride } : {}),
+          ...(totals.discount ? { discount_amount_clp: totals.discount } : {}),
+        },
+      });
+
+      // Motor de Tarifa: si la orden nace cerrada (DELIVERED, modelo POS) se
+      // cobra en la MISMA transacción: nunca queda DELIVERED sin su cobro.
+      const order = o.rows[0];
+      if (order.status === "DELIVERED") await evaluateAndChargeFee(client, order);
+      return { ...order, stock_reservation_status: stock.to };
+    });
 
     return res.json({
       ok: true,
       order: {
-        id: o.rows[0].id,
-        orderNo: o.rows[0].order_no,
-        orderCode: o.rows[0].order_code,
-        status: o.rows[0].status,
-        totalClp: o.rows[0].total_clp
-      }
+        id: created.id,
+        orderNo: created.order_no,
+        orderCode: created.order_code,
+        status: created.status,
+        paymentStatus: created.payment_status,
+        totalClp: created.total_clp,
+        stockReservationStatus: created.stock_reservation_status,
+      },
     });
   } catch (e) {
-    try {
-      await client.query("ROLLBACK");
-    } catch (rollbackErr) {
-      console.error("Rollback failed:", rollbackErr.message);
-    }
-
-    const statusCode = Number(e?.statusCode || 400);
-    return res.status(statusCode).json({ ok: false, error: String(e?.message ?? e) });
-  } finally {
-    client.release();
+    return sendError(res, e, { defaultStatus: 400 });
   }
+});
+
+const editSchema = z.object({
+  customerId: z.string().uuid(),
+  items: z.array(lineSchema).min(1).max(MAX_ORDER_LINES),
+
+  // Sin valores por defecto: lo que no viene conserva el valor guardado.
+  deliveryMethod: z.enum(DELIVERY_METHODS).optional(),
+  deliveryFeeClp: clpAmount().optional(),
+
+  // ONLINE no se asigna editando (lo define el flujo de pago en línea): ver la ruta.
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  paymentStatus: z.enum(PAYMENT_STATUSES).optional(),
+
+  discountAmountClp: clpAmount().optional(),
+  finalPriceOverrideClp: clpAmount().optional().nullable(),
+
+  orderDate: z.string().regex(ISO_DATE_INPUT, "Fecha inválida: usa AAAA-MM-DD.").optional(),
 });
 
 /**
  * PUT /admin/orders/:id
- * Edición completa de una orden ya creada: cliente, items, entrega, pago,
- * fecha. Exclusivo de ADMIN/SUPERADMIN (no STAFF) — a pedido explícito del
- * dueño del producto. El estado (status) NO se toca acá: sigue siendo
- * responsabilidad exclusiva de PATCH /:id/status, para no tener dos
- * caminos que puedan pisarse entre sí.
+ * Edición completa (solo ADMIN/SUPERADMIN): cliente, items, entrega, pago,
+ * fecha. El status NO se toca acá (solo PATCH /:id/status).
  *
- * Reconciliación de stock: se restituye el stock de los items VIEJOS y se
- * vuelve a reservar con la lista NUEVA (misma validación/descuento que
- * POST /, vía resolveAndReserveOrderItems) — evita duplicar o perder
- * inventario en cada edición.
- *
- * NO dispara el Motor de Tarifa de nuevo: si la orden ya estaba DELIVERED y
- * ya generó su cobro, ese registro del ledger queda congelado tal cual — el
- * diseño del motor es explícito en que un total_clp editado después NUNCA
- * debe recalcular un cobro ya emitido.
- *
- * Bloqueada para órdenes CANCELLED: su stock ya quedó en un estado
- * ambiguo (cancelar hoy no restituye stock — gap preexistente, sin
- * relación con este cambio) y tocarlo acá arriesgaría corromper el
- * inventario todavía más.
+ * - Prohibida en órdenes DELIVERED o CANCELLED y en órdenes con pago en línea (409).
+ * - Las líneas que no cambian de identidad (producto + variante + toppings)
+ *   conservan su precio y nombre guardados; solo las nuevas se cotizan hoy.
+ * - Stock: si la orden tiene stock tomado (RESERVED/CONSUMED) se aplica solo
+ *   la diferencia; si no tomó stock (pedido web manual sin confirmar), nada.
+ * - Campos omitidos conservan su valor (sin valores por defecto).
+ * - created_at solo cambia si cambia la fecha de calendario (Chile), y
+ *   conserva la hora original.
+ * - No dispara el Motor de Tarifa (una orden DELIVERED no se edita).
  */
-router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
-  const schema = z.object({
-    customerId: z.string().uuid(),
-    items: z.array(z.object({
-      productId: z.string().uuid(),
-      qty: z.number().int().positive(),
-      variantId: z.string().uuid().optional().nullable(),
-      toppings: z.array(z.string().uuid()).optional().default([]),
-    })).min(1),
-
-    deliveryMethod: z.enum(DELIVERY_METHOD).default("PICKUP"),
-    deliveryFeeClp: z.number().int().nonnegative().default(0),
-
-    paymentMethod: z.enum(PAYMENT_METHOD).default("CASH"),
-    paymentStatus: z.enum(PAYMENT_STATUS).default("PAID"),
-
-    discountAmountClp: z.number().int().nonnegative().default(0),
-    finalPriceOverrideClp: z.number().int().nonnegative().optional().nullable(),
-
-    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  });
-
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-
+router.put("/:id", requireRole(...ADMIN_ROLES), validateUuidParam("id"), requirePermission("orders", "canEdit"), async (req, res) => {
+  const parsed = editSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
   const { id } = req.params;
-  const {
-    customerId, items, deliveryMethod, deliveryFeeClp, paymentMethod, paymentStatus,
-    discountAmountClp, finalPriceOverrideClp, orderDate
-  } = parsed.data;
-
-  const pool = getPool();
-  let client;
-  try {
-    client = await pool.connect();
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
-  }
+  const d = parsed.data;
+  const actor = actorOf(req);
 
   try {
-    await client.query("BEGIN");
+    const edited = await withTransaction(async (client) => {
+      const order = await lockOrder(client, id);
+      if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+        throw appError(
+          409,
+          "ORDER_NOT_EDITABLE",
+          order.status === "DELIVERED" ? "Una orden entregada no se puede editar." : "Una orden cancelada no se puede editar."
+        );
+      }
+      if (order.payment_method === "ONLINE") {
+        throw appError(
+          409,
+          "ONLINE_ORDER_NOT_EDITABLE",
+          "Una orden con pago en línea no se puede editar: el monto cobrado depende de sus líneas originales."
+        );
+      }
+      if (d.paymentMethod !== undefined && !MANUAL_PAYMENT_METHODS.includes(d.paymentMethod)) {
+        throw appError(400, "VALIDATION_ERROR", "El pago en línea no se asigna editando la orden: usa Transferencia o Efectivo.");
+      }
 
-    const existing = await client.query(`SELECT id, status FROM orders WHERE id=$1 FOR UPDATE`, [id]);
-    if (existing.rowCount === 0) {
-      const notFound = new Error("Orden no encontrada");
-      notFound.statusCode = 404;
-      throw notFound;
-    }
-    if (existing.rows[0].status === "CANCELLED") {
-      const cancelledErr = new Error("No se puede editar una orden cancelada");
-      cancelledErr.statusCode = 400;
-      throw cancelledErr;
-    }
+      if (d.orderDate && d.orderDate !== order.local_date) {
+        const dateCheck = validateOrderDate(d.orderDate, { today: santiagoToday() });
+        if (!dateCheck.ok) throw appError(400, "VALIDATION_ERROR", dateCheck.error);
+      }
 
-    const c = await client.query("SELECT id FROM customers WHERE id=$1 LIMIT 1", [customerId]);
-    if (c.rowCount === 0) throw new Error("Cliente no existe");
+      const c = await client.query("SELECT id FROM customers WHERE id=$1 LIMIT 1", [d.customerId]);
+      if (c.rowCount === 0) throw appError(400, "CUSTOMER_NOT_FOUND", "Cliente no existe");
 
-    // Restituye el stock de los items actuales ANTES de borrarlos, para no
-    // perder inventario al re-reservar con la lista nueva.
-    await restoreOrderItemsStock(client, id);
-    await client.query(`DELETE FROM order_items WHERE order_id=$1`, [id]);
+      const previousLines = await loadOrderLines(client, id);
+      const items = toLineItems(d.items);
+      // Orden de bloqueo fijo (orders → products → variants): se bloquean primero
+      // TODOS los productos involucrados (líneas anteriores y nuevas).
+      const productIds = [...new Set([...previousLines.map((l) => l.product_id), ...items.map((i) => i.productId)])].sort();
+      await client.query(`SELECT id FROM products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [productIds]);
 
-    const { orderItemsData, subtotal } = await resolveAndReserveOrderItems(client, items);
+      const plan = planOrderEdit(previousLines, items);
+      const newItems = plan.slots.filter((slot) => slot.kind === "new").map((slot) => slot.item);
+      const resolved = newItems.length ? await resolveOrderLines(client, newItems, { allowToppings: true }) : { lines: [] };
+      let next = 0;
+      const lines = plan.slots.map((slot) => (slot.kind === "kept" ? slot.line : resolved.lines[next++]));
+      const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
 
-    const delivery = Number(deliveryFeeClp || 0);
-    const discount = Number(discountAmountClp || 0);
-    let total = subtotal + delivery - discount;
-    if (total < 0) total = 0;
+      const totals = computeOrderTotals({
+        subtotal,
+        deliveryFeeClp: d.deliveryFeeClp ?? order.delivery_fee_clp,
+        discountAmountClp: d.discountAmountClp ?? order.discount_amount_clp,
+        finalPriceOverrideClp: d.finalPriceOverrideClp !== undefined ? d.finalPriceOverrideClp : order.final_price_override_clp,
+      });
 
-    if (finalPriceOverrideClp !== undefined && finalPriceOverrideClp !== null) {
-      total = finalPriceOverrideClp;
-    }
+      let paymentDecision = null;
+      if (d.paymentStatus !== undefined && d.paymentStatus !== order.payment_status) {
+        paymentDecision = decidePaymentStatusChange(order, d.paymentStatus, { source: "ADMIN" });
+        if (!paymentDecision.ok) throw rejectDecision(paymentDecision);
+      }
 
-    // Mismo fix de timezone que en POST / (ver comentario ahí): nunca
-    // `$::date + CURRENT_TIME` (offset de la sesión de Postgres, no de
-    // Chile) — se ancla explícitamente a America/Santiago de los dos lados.
-    const o = await client.query(
-      `UPDATE orders SET
-         customer_id=$1, payment_status=$2, payment_method=$3, delivery_method=$4,
-         subtotal_clp=$5, delivery_fee_clp=$6, discount_amount_clp=$7, final_price_override_clp=$8,
-         total_clp=$9, created_at=COALESCE(($10::date + (NOW() AT TIME ZONE 'America/Santiago')::time) AT TIME ZONE 'America/Santiago', created_at),
-         updated_at=NOW()
-       WHERE id=$11
-       RETURNING id, order_no, order_code, status, total_clp`,
-      [
-        customerId, paymentStatus, paymentMethod, deliveryMethod,
-        subtotal, delivery, discount, finalPriceOverrideClp ?? null, total, orderDate ?? null, id
-      ]
-    );
+      const stock = await adjustOrderStockForEdit(client, { orderId: id, previousLines, nextLines: lines });
 
-    for (const item of orderItemsData) {
-      await client.query(
-        `INSERT INTO order_items (
-           id, order_id, product_id, product_name_snapshot, variant_id, variant_name, selected_toppings,
-           unit_price_clp, qty, line_total_clp, created_at
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+      const paidAtSql = paymentDecision ? { SET: "NOW()", CLEAR: "NULL", KEEP: "paid_at" }[paymentDecision.effects.paidAt] : "paid_at";
+      const updated = await client.query(
+        `UPDATE orders SET
+           customer_id = $2,
+           delivery_method = $3,
+           payment_method = $4,
+           payment_status = $5,
+           paid_at = ${paidAtSql},
+           subtotal_clp = $6, delivery_fee_clp = $7, discount_amount_clp = $8,
+           final_price_override_clp = $9, total_clp = $10,
+           created_at = CASE
+             WHEN $11::date IS NULL OR $11::date = (created_at AT TIME ZONE '${SANTIAGO_TZ}')::date THEN created_at
+             ELSE ($11::date + (created_at AT TIME ZONE '${SANTIAGO_TZ}')::time) AT TIME ZONE '${SANTIAGO_TZ}'
+           END
+         WHERE id = $1
+         RETURNING id, order_no, order_code, status, payment_status, payment_method, total_clp,
+                   stock_reservation_status, created_at`,
         [
-          item.id, id, item.productId, item.productName, item.variantId, item.variantName, item.selectedToppings,
-          item.unitPrice, item.qty, item.lineTotal
+          id,
+          d.customerId,
+          d.deliveryMethod ?? order.delivery_method,
+          d.paymentMethod ?? order.payment_method,
+          d.paymentStatus ?? order.payment_status,
+          totals.subtotal,
+          totals.deliveryFee,
+          totals.discount,
+          totals.finalPriceOverride,
+          totals.total,
+          d.orderDate ?? null,
         ]
       );
-    }
 
-    await client.query("COMMIT");
+      await client.query(`DELETE FROM order_items WHERE order_id = $1`, [id]);
+      await insertOrderLines(client, id, lines);
+
+      const keptCount = plan.slots.filter((slot) => slot.kind === "kept").length;
+      await recordOrderEvent(client, {
+        orderId: id,
+        type: "ORDER_EDITED",
+        from: String(order.total_clp),
+        to: String(totals.total),
+        actor,
+        source: "ADMIN",
+        data: {
+          lines: { before: previousLines.length, after: lines.length, kept_prices: keptCount, repriced: lines.length - keptCount },
+          ...(order.customer_id !== d.customerId ? { customer_changed: true } : {}),
+          ...(d.paymentMethod && d.paymentMethod !== order.payment_method ? { payment_method: { from: order.payment_method, to: d.paymentMethod } } : {}),
+          ...(d.orderDate && d.orderDate !== order.local_date ? { order_date: { from: order.local_date, to: d.orderDate } } : {}),
+          stock: stock.applied ? { changes: stock.changes, skipped: stock.skipped } : { reservation: stock.reservation, applied: false },
+        },
+      });
+      if (paymentDecision && !paymentDecision.noop) {
+        await recordOrderEvent(client, {
+          orderId: id,
+          type: "PAYMENT_STATUS_CHANGED",
+          from: order.payment_status,
+          to: d.paymentStatus,
+          actor,
+          source: "ADMIN",
+          data: { via: "ORDER_EDIT" },
+        });
+      }
+      return updated.rows[0];
+    });
 
     return res.json({
       ok: true,
       order: {
-        id: o.rows[0].id,
-        orderNo: o.rows[0].order_no,
-        orderCode: o.rows[0].order_code,
-        status: o.rows[0].status,
-        totalClp: o.rows[0].total_clp
-      }
+        id: edited.id,
+        orderNo: edited.order_no,
+        orderCode: edited.order_code,
+        status: edited.status,
+        paymentStatus: edited.payment_status,
+        totalClp: edited.total_clp,
+        stockReservationStatus: edited.stock_reservation_status,
+      },
     });
   } catch (e) {
-    try {
-      await client.query("ROLLBACK");
-    } catch (rollbackErr) {
-      console.error("Rollback failed:", rollbackErr.message);
-    }
-
-    const statusCode = Number(e?.statusCode || 400);
-    return res.status(statusCode).json({ ok: false, error: String(e?.message ?? e) });
-  } finally {
-    client.release();
+    return sendError(res, e, { defaultStatus: 400 });
   }
 });
 
-/**
- * PATCH /admin/orders/:id/status
- * Cambia estado y/o estado de pago
- */
-router.patch("/:id/status", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
-  const schema = z.object({
-    status: z.enum(ORDER_STATUS),
-  });
-
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-
-  const { id } = req.params;
-  const { status } = parsed.data;
-
-  const pool = getPool();
-  let client;
-  try {
-    client = await pool.connect();
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
-  }
-
-  try {
-    await client.query("BEGIN");
-
-    const r = await client.query(
-      `UPDATE orders
-       SET status=$1, updated_at=NOW()
-       WHERE id=$2
-       RETURNING id, order_no, order_code, status, payment_status, total_clp, updated_at`,
-      [status, id]
-    );
-
-    if (r.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ ok: false, error: "Orden no encontrada" });
-    }
-
-    const updatedOrder = r.rows[0];
-
-    // Motor de Tarifa: cobra por la orden cerrada, en la misma transacción
-    // que el cambio de status (atomicidad: nunca queda DELIVERED sin
-    // cobro, ni viceversa). No hace falta comparar contra el status
-    // anterior — evaluateAndChargeFee es idempotente por construcción
-    // (UNIQUE(order_id) + ON CONFLICT DO NOTHING), así que cubre solo esta
-    // vez, doble-click, y el caso DELIVERED→CANCELLED→DELIVERED de nuevo
-    // (no se cobra dos veces la segunda vez que vuelve a DELIVERED).
-    if (updatedOrder.status === "DELIVERED") {
-      await evaluateAndChargeFee(client, updatedOrder);
-    }
-
-    await client.query("COMMIT");
-
-    return res.json({ ok: true, order: updatedOrder });
-  } catch (e) {
-    try {
-      await client.query("ROLLBACK");
-    } catch (rollbackErr) {
-      console.error("Rollback failed:", rollbackErr.message);
-    }
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
-  } finally {
-    client.release();
-  }
+const statusSchema = z.object({
+  status: z.enum(ORDER_STATUSES),
+  // Opcional: registrar el pago en la misma operación (atómico; solo ADMIN/SUPERADMIN).
+  paymentStatus: z.enum(PAYMENT_STATUSES).optional(),
+  note: z.string().trim().max(MAX_NOTE_CHARS).optional(),
 });
 
 /**
- * PATCH /admin/orders/:id/payment
- * Actualiza estado de pago
+ * PATCH /admin/orders/:id/status  { status, paymentStatus?, note? }
+ * Cambia el estado según la tabla de transiciones (lib/orderStatus.js): 409
+ * con mensaje en español si no está permitido; repetir el estado actual es un
+ * no-op. Con `paymentStatus` el pago se aplica primero, en la misma
+ * transacción (p. ej. marcar "Pagado" + pago "Pagado" de una vez).
  */
-router.patch("/:id/payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
-  const schema = z.object({
-    paymentStatus: z.enum(PAYMENT_STATUS),
-  });
-
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-
+router.patch("/:id/status", requireRole(...ALL_ROLES), validateUuidParam("id"), requirePermission("orders", "canUpdateStatus"), async (req, res) => {
+  const parsed = statusSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
   const { id } = req.params;
-  const { paymentStatus } = parsed.data;
+  const d = parsed.data;
+  const actor = actorOf(req);
 
   try {
-    const pool = getPool();
-
-    const r = await pool.query(
-      `UPDATE orders
-       SET payment_status=$1, updated_at=NOW()
-       WHERE id=$2
-       RETURNING id, order_no, status, payment_status, updated_at`,
-      [paymentStatus, id]
-    );
-
-    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Orden no encontrada" });
-
-    return res.json({ ok: true, order: r.rows[0] });
+    const result = await withTransaction(async (client) => {
+      let order = await lockOrder(client, id);
+      const attempts = await lockOrderAttempts(client, id);
+      if (d.status === "CANCELLED" && d.status !== order.status) assertNoPaymentInProgress(attempts);
+      let changed = false;
+      if (d.paymentStatus !== undefined && d.paymentStatus !== order.payment_status) {
+        if (!ADMIN_ROLES.includes(req.user.role)) {
+          throw appError(403, "PERMISSION_DENIED", "Solo un administrador puede cambiar el estado de pago.");
+        }
+        assertNotManagedOnline(order, attempts);
+        order = (
+          await applyPaymentChange(client, order, d.paymentStatus, { actor, source: "ADMIN", note: d.note, data: manualPaymentData(d.paymentStatus) })
+        ).order;
+        changed = true;
+      }
+      const statusResult = await applyStatusChange(client, order, d.status, { actor, source: "ADMIN", note: d.note });
+      return { order: statusResult.order, changed: changed || statusResult.changed };
+    });
+    return res.json(stateResponse(result.order, { noop: !result.changed }));
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+    return sendError(res, e);
+  }
+});
+
+const paymentSchema = z.object({
+  paymentStatus: z.enum(PAYMENT_STATUSES),
+  note: z.string().trim().max(MAX_NOTE_CHARS).optional(),
+});
+
+/**
+ * PATCH /admin/orders/:id/payment  { paymentStatus, note? }
+ * payment_status es la única fuente de verdad del dinero: solo ADMIN o
+ * SUPERADMIN pueden cambiarlo (STAFF recibe 403), con las transiciones de
+ * lib/orderStatus.js. Reenviar el valor actual es un no-op para cualquier rol
+ * (el modal del panel siempre manda ambos campos).
+ */
+router.patch("/:id/payment", requireRole(...ALL_ROLES), validateUuidParam("id"), requirePermission("orders", "canUpdateStatus"), async (req, res) => {
+  const parsed = paymentSchema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  const { id } = req.params;
+  const d = parsed.data;
+
+  try {
+    const result = await withTransaction(async (client) => {
+      const order = await lockOrder(client, id);
+      if (d.paymentStatus === order.payment_status) return { order, changed: false };
+      if (!ADMIN_ROLES.includes(req.user.role)) {
+        throw appError(403, "PERMISSION_DENIED", "Solo un administrador puede cambiar el estado de pago.");
+      }
+      assertNotManagedOnline(order, await lockOrderAttempts(client, id));
+      return applyPaymentChange(client, order, d.paymentStatus, {
+        actor: actorOf(req),
+        source: "ADMIN",
+        note: d.note,
+        data: manualPaymentData(d.paymentStatus),
+      });
+    });
+    return res.json(stateResponse(result.order, { noop: !result.changed }));
+  } catch (e) {
+    return sendError(res, e);
   }
 });
 

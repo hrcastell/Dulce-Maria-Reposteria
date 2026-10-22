@@ -2,74 +2,43 @@ const express = require("express");
 const { z } = require("zod");
 const crypto = require("crypto");
 
-const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
 const { getPool } = require("../db");
-const { requireRole } = require("../middleware/auth");
+const { requireRole, requirePermission } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 const { slugify } = require("../utils/slug");
 const { getRecipeCostsByIds, getSingleRecipeCost } = require("../lib/recipeCost");
+const { validationError, sendError } = require("../lib/httpErrors");
+const { clpAmount } = require("../lib/schemas");
+const {
+  UPLOADS_DIR,
+  createImageUpload,
+  removeUploadedFiles,
+  deleteUploadByUrl,
+} = require("../lib/uploads");
 
 const router = express.Router();
 
 // ===== Upload config =====
-const APP_ROOT = path.join(__dirname, "..", ".."); // /dulcemaria-api
-const UPLOADS_DIR = path.join(APP_ROOT, "uploads");
-
-// Mismo resguardo que admin.cake.js: solo borra archivos que resuelven
-// DENTRO de uploads/, nunca una ruta armada con "../" desde la BD.
-function resolveLocalUploadPath(imageUrl) {
-  if (!String(imageUrl || "").startsWith("/uploads/")) return null;
-  const candidate = path.resolve(APP_ROOT, String(imageUrl).replace(/^\/+/, ""));
-  const uploadsRoot = path.resolve(UPLOADS_DIR) + path.sep;
-  return candidate.startsWith(uploadsRoot) ? candidate : null;
-}
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-function extFromMime(mime) {
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  return "";
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    try {
-      const productId = req.params.id;
-      const dir = path.join(UPLOADS_DIR, "products", productId);
-      fs.mkdirSync(dir, { recursive: true }); // <- si no existe, la crea
-      cb(null, dir);
-    } catch (e) {
-      cb(e);
-    }
-  },
-  filename: (req, file, cb) => {
-    try {
-      const ext = extFromMime(file.mimetype);
-      const name = `img_${Date.now()}_${crypto.randomBytes(6).toString("hex")}${ext}`;
-      cb(null, name);
-    } catch (e) {
-      cb(e);
-    }
-  },
+// Tipo verificado por contenido (JPEG/PNG/WebP), nombre generado por el
+// servidor y extensión derivada del tipo real (ver lib/uploads.js).
+// req.params.id ya pasó validateUuidParam: no puede salir de uploads/products/.
+const MAX_PRODUCT_IMAGES = 8;
+const uploadProductImages = createImageUpload({
+  field: "images",
+  maxFiles: MAX_PRODUCT_IMAGES,
+  maxFileSizeMb: 10,
+  directory: (req) => path.join(UPLOADS_DIR, "products", req.params.id),
+  filenamePrefix: "img_",
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024, files: 8 },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      return cb(new Error("Formato no permitido. Usa JPG/PNG/WEBP."));
-    }
-    cb(null, true);
-  },
-});
+const MAX_STOCK = 1000000;
+const dimension = () => z.number().positive().max(1000);
 
 // ===== CRUD products =====
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), requirePermission("products", "canView"), async (req, res) => {
   try {
     const pool = getPool();
     const r = await pool.query(
@@ -114,22 +83,22 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "ADMIN"), requirePermission("products", "canCreate"), async (req, res) => {
   const schema = z.object({
-    name: z.string().min(2),
-    description: z.string().optional(),
-    priceClp: z.number().int().nonnegative(),
-    costPriceClp: z.number().int().nonnegative().optional().nullable(),
-    stockQty: z.number().int().nonnegative().default(0),
+    name: z.string().min(2).max(200),
+    description: z.string().max(5000).optional(),
+    priceClp: clpAmount(),
+    costPriceClp: clpAmount().optional().nullable(),
+    stockQty: z.number().int().nonnegative().max(MAX_STOCK).default(0),
     isActive: z.boolean().default(true),
     recipeId: z.string().uuid().optional().nullable(),
-    targetDiameterCm: z.number().positive().optional().nullable(),
-    targetHeightCm: z.number().positive().optional().nullable(),
-    targetLayers: z.number().int().positive().optional().nullable(),
+    targetDiameterCm: dimension().optional().nullable(),
+    targetHeightCm: dimension().optional().nullable(),
+    targetLayers: z.number().int().positive().max(100).optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const { name, description, priceClp, costPriceClp, stockQty, isActive, recipeId, targetDiameterCm, targetHeightCm, targetLayers } = parsed.data;
 
@@ -170,20 +139,20 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
  */
 const updateProductHandler = async (req, res) => {
   const schema = z.object({
-    name: z.string().min(2).optional(),
-    description: z.string().optional().nullable(),
-    priceClp: z.number().int().nonnegative().optional(),
-    costPriceClp: z.number().int().nonnegative().optional().nullable(),
-    stockQty: z.number().int().nonnegative().optional(),
+    name: z.string().min(2).max(200).optional(),
+    description: z.string().max(5000).optional().nullable(),
+    priceClp: clpAmount().optional(),
+    costPriceClp: clpAmount().optional().nullable(),
+    stockQty: z.number().int().nonnegative().max(MAX_STOCK).optional(),
     isActive: z.boolean().optional(),
     recipeId: z.string().uuid().optional().nullable(),
-    targetDiameterCm: z.number().positive().optional().nullable(),
-    targetHeightCm: z.number().positive().optional().nullable(),
-    targetLayers: z.number().int().positive().optional().nullable(),
+    targetDiameterCm: dimension().optional().nullable(),
+    targetHeightCm: dimension().optional().nullable(),
+    targetLayers: z.number().int().positive().max(100).optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const { id } = req.params;
   const patch = parsed.data;
@@ -248,11 +217,11 @@ const updateProductHandler = async (req, res) => {
   }
 };
 
-router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), updateProductHandler);
-router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), updateProductHandler);
+// PUT /:id (alias sin uso del PATCH) se eliminó: ningún cliente lo llamaba (C-20).
+router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), requirePermission("products", "canEdit"), updateProductHandler);
 
 // ===== Images =====
-router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), requirePermission("products", "canView"), async (req, res) => {
   const { id } = req.params;
   try {
     const pool = getPool();
@@ -269,12 +238,25 @@ router.get("/:id/images", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateU
   }
 });
 
+/** 404 antes de procesar el multipart: no se crean carpetas ni archivos para productos inexistentes. */
+async function ensureProductExists(req, res, next) {
+  try {
+    const r = await getPool().query("SELECT 1 FROM products WHERE id=$1 LIMIT 1", [req.params.id]);
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Producto no existe" });
+    return next();
+  } catch (e) {
+    return sendError(res, e);
+  }
+}
+
 router.post(
   "/:id/images",
   requireRole("SUPERADMIN", "ADMIN"),
   validateUuidParam("id"),
-  upload.array("images", 8),
-  async (req, res, next) => {
+  requirePermission("products", "canEdit"),
+  ensureProductExists,
+  uploadProductImages,
+  async (req, res) => {
     const productId = req.params.id;
     const files = req.files || [];
 
@@ -284,14 +266,17 @@ router.post(
       const pool = getPool();
 
       const p = await pool.query("SELECT id FROM products WHERE id=$1 LIMIT 1", [productId]);
-      if (p.rowCount === 0) return res.status(404).json({ ok: false, error: "Producto no existe" });
+      if (p.rowCount === 0) {
+        await removeUploadedFiles(req);
+        return res.status(404).json({ ok: false, error: "Producto no existe" });
+      }
 
       const c = await pool.query("SELECT COUNT(*)::int AS n FROM product_images WHERE product_id=$1", [productId]);
       const current = c.rows[0].n;
 
-      if (current + files.length > 8) {
-        for (const f of files) { try { fs.unlinkSync(f.path); } catch {} }
-        return res.status(400).json({ ok: false, error: `Máximo 8 imágenes por producto. Actualmente: ${current}` });
+      if (current + files.length > MAX_PRODUCT_IMAGES) {
+        await removeUploadedFiles(req);
+        return res.status(400).json({ ok: false, error: `Máximo ${MAX_PRODUCT_IMAGES} imágenes por producto. Actualmente: ${current}` });
       }
 
       const inserted = [];
@@ -314,13 +299,13 @@ router.post(
       res.json({ ok: true, uploaded: inserted.length, items: inserted });
     } catch (e) {
       // cleanup si algo falla después de guardar archivos
-      for (const f of files) { try { fs.unlinkSync(f.path); } catch {} }
-      next(e);
+      await removeUploadedFiles(req);
+      return sendError(res, e);
     }
   }
 );
 
-router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), async (req, res, next) => {
+router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), requirePermission("products", "canEdit"), async (req, res, next) => {
   try {
     const { imageId } = req.params;
     const pool = getPool();
@@ -343,7 +328,7 @@ router.patch("/images/:imageId/primary", requireRole("SUPERADMIN", "ADMIN"), val
  * DELETE /admin/products/:id
  * Elimina producto completo
  */
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res, next) => {
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), requirePermission("products", "canDelete"), async (req, res, next) => {
   try {
     const { id } = req.params;
     const pool = getPool();
@@ -357,17 +342,17 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"
       return res.status(409).json({ ok: false, error: "No se puede eliminar un producto con órdenes asociadas" });
     }
 
-    // Eliminar imágenes asociadas
+    // Eliminar imágenes asociadas (solo rutas dentro de uploads/)
     const images = await pool.query("SELECT url_original FROM product_images WHERE product_id=$1", [id]);
     for (const img of images.rows) {
-      try {
-        const abs = resolveLocalUploadPath(img.url_original);
-        if (abs) fs.unlinkSync(abs);
-      } catch {}
+      await deleteUploadByUrl(img.url_original);
     }
 
     await pool.query("DELETE FROM product_images WHERE product_id=$1", [id]);
     await pool.query("DELETE FROM products WHERE id=$1", [id]);
+
+    // La carpeta del producto queda vacía: se elimina (rmdir falla si no lo está).
+    await fs.promises.rmdir(path.join(UPLOADS_DIR, "products", id)).catch(() => {});
 
     res.json({ ok: true, message: "Producto eliminado", productId: id });
   } catch (e) {
@@ -375,7 +360,7 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"
   }
 });
 
-router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), async (req, res, next) => {
+router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("imageId"), requirePermission("products", "canEdit"), async (req, res, next) => {
   try {
     const { imageId } = req.params;
     const pool = getPool();
@@ -390,11 +375,8 @@ router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUu
 
     await pool.query(`DELETE FROM product_images WHERE id=$1`, [imageId]);
 
-    // borrar archivo físico
-    try {
-      const abs = resolveLocalUploadPath(row.url_original);
-      if (abs) fs.unlinkSync(abs);
-    } catch {}
+    // borrar archivo físico (solo rutas dentro de uploads/)
+    await deleteUploadByUrl(row.url_original);
 
     // si era primary, reasignar
     if (row.is_primary) {
@@ -418,7 +400,7 @@ router.delete("/images/:imageId", requireRole("SUPERADMIN", "ADMIN"), validateUu
 
 // ===== Variants =====
 
-router.get("/:id/variants", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+router.get("/:id/variants", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), requirePermission("products", "canView"), async (req, res) => {
   const { id } = req.params;
   try {
     const pool = getPool();
@@ -435,17 +417,17 @@ router.get("/:id/variants", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validat
   }
 });
 
-router.post("/:id/variants", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+router.post("/:id/variants", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), requirePermission("products", "canEdit"), async (req, res) => {
   const { id } = req.params;
   const schema = z.object({
     name: z.string().min(1).max(100),
-    price_override_clp: z.number().int().nonnegative().nullable().optional(),
-    stock_qty: z.number().int().nonnegative().default(0),
+    price_override_clp: clpAmount().nullable().optional(),
+    stock_qty: z.number().int().nonnegative().max(MAX_STOCK).default(0),
     is_active: z.boolean().default(true),
-    sort_order: z.number().int().default(0),
+    sort_order: z.number().int().min(-10000).max(10000).default(0),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   try {
     const pool = getPool();
@@ -464,17 +446,17 @@ router.post("/:id/variants", requireRole("SUPERADMIN", "ADMIN"), validateUuidPar
   }
 });
 
-router.patch("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), async (req, res) => {
+router.patch("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), requirePermission("products", "canEdit"), async (req, res) => {
   const { variantId } = req.params;
   const schema = z.object({
     name: z.string().min(1).max(100).optional(),
-    price_override_clp: z.number().int().nonnegative().nullable().optional(),
-    stock_qty: z.number().int().nonnegative().optional(),
+    price_override_clp: clpAmount().nullable().optional(),
+    stock_qty: z.number().int().nonnegative().max(MAX_STOCK).optional(),
     is_active: z.boolean().optional(),
-    sort_order: z.number().int().optional(),
+    sort_order: z.number().int().min(-10000).max(10000).optional(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const fields = [];
   const values = [];
@@ -503,7 +485,7 @@ router.patch("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validat
   }
 });
 
-router.delete("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), async (req, res) => {
+router.delete("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("variantId"), requirePermission("products", "canEdit"), async (req, res) => {
   const { variantId } = req.params;
   try {
     const pool = getPool();
@@ -517,7 +499,7 @@ router.delete("/variants/:variantId", requireRole("SUPERADMIN", "ADMIN"), valida
 
 // ===== Toppings =====
 
-router.get("/:id/toppings", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+router.get("/:id/toppings", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), requirePermission("products", "canView"), async (req, res) => {
   const { id } = req.params;
   try {
     const pool = getPool();
@@ -534,17 +516,17 @@ router.get("/:id/toppings", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validat
   }
 });
 
-router.post("/:id/toppings", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+router.post("/:id/toppings", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), requirePermission("products", "canEdit"), async (req, res) => {
   const { id } = req.params;
   const schema = z.object({
     name: z.string().min(1).max(100),
     type: z.enum(["BASE", "ADDITIONAL"]).default("ADDITIONAL"),
-    price_clp: z.number().int().nonnegative().default(0),
+    price_clp: clpAmount().default(0),
     is_active: z.boolean().default(true),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   try {
     const pool = getPool();
@@ -563,17 +545,17 @@ router.post("/:id/toppings", requireRole("SUPERADMIN", "ADMIN"), validateUuidPar
   }
 });
 
-router.patch("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), async (req, res) => {
+router.patch("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), requirePermission("products", "canEdit"), async (req, res) => {
   const { toppingId } = req.params;
   const schema = z.object({
     name: z.string().min(1).max(100).optional(),
     type: z.enum(["BASE", "ADDITIONAL"]).optional(),
-    price_clp: z.number().int().nonnegative().optional(),
+    price_clp: clpAmount().optional(),
     is_active: z.boolean().optional(),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const fields = [];
   const values = [];
@@ -602,7 +584,7 @@ router.patch("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validat
   }
 });
 
-router.delete("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), async (req, res) => {
+router.delete("/toppings/:toppingId", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("toppingId"), requirePermission("products", "canEdit"), async (req, res) => {
   const { toppingId } = req.params;
   try {
     const pool = getPool();

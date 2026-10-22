@@ -3,37 +3,36 @@ const { z } = require("zod");
 const crypto = require("crypto");
 
 const { getPool } = require("../db");
-const { requireRole } = require("../middleware/auth");
+const { requireRole, requirePermission } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
+const { validationError } = require("../lib/httpErrors");
+const { searchTerm, optionalQuery } = require("../lib/schemas");
+// Misma normalizaci\u00f3n que usa el checkout web para reconocer fichas (sin tildes, min\u00fasculas).
+const { normalizePersonName: normalizeString } = require("../lib/customerIdentity");
 
 const router = express.Router();
 
-/**
- * Normalize string for comparison (remove accents, lowercase, trim extra spaces)
- */
-function normalizeString(str) {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove accents
-    .replace(/\s+/g, " ") // Normalize spaces
-    .trim();
-}
+// `source`: ADMIN = ficha del panel (privada); WEB = creada por un pedido del
+// sitio p\u00fablico. El checkout web solo reutiliza fichas WEB y nunca las modifica.
+const CUSTOMER_COLUMNS = "id, email, full_name, phone, address, notes, source, created_at, updated_at";
 
 /**
  * GET /admin/customers?q=...
  * Lista/busca clientes (máx 50)
  */
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const q = String(req.query.q || "").trim();
+const listQuerySchema = z.object({ q: optionalQuery(searchTerm) });
+
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), requirePermission("customers", "canView"), async (req, res) => {
+  const query = listQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const q = query.data.q || "";
 
   try {
     const pool = getPool();
 
     if (!q) {
       const r = await pool.query(
-        `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
+        `SELECT ${CUSTOMER_COLUMNS}
          FROM customers
          ORDER BY created_at DESC
          LIMIT 1000000000`
@@ -42,7 +41,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
     }
 
     const r = await pool.query(
-      `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
+      `SELECT ${CUSTOMER_COLUMNS}
        FROM customers
        WHERE (email ILIKE $1 OR full_name ILIKE $1 OR phone ILIKE $1)
        ORDER BY created_at DESC
@@ -60,17 +59,17 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
  * POST /admin/customers
  * Crea cliente
  */
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), requirePermission("customers", "canCreate"), async (req, res) => {
   const schema = z.object({
-    email: z.string().email().optional().nullable(),
-    fullName: z.string().min(2),
-    phone: z.string().min(6).optional().nullable(),
-    address: z.string().min(3).optional().nullable(),
+    email: z.string().email().max(254).optional().nullable(),
+    fullName: z.string().min(2).max(200),
+    phone: z.string().min(6).max(50).optional().nullable(),
+    address: z.string().min(3).max(400).optional().nullable(),
     notes: z.string().max(500).optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const d = parsed.data;
 
@@ -82,9 +81,10 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       if (ex.rowCount > 0) return res.status(409).json({ ok: false, error: "Cliente con ese email ya existe" });
     }
 
-    // Check for duplicate name (normalized)
+    // Nombre duplicado (normalizado) entre las fichas del PANEL: las creadas
+    // por pedidos web no bloquean registrar a esa persona (C-13).
     const normalizedName = normalizeString(d.fullName);
-    const allCustomers = await pool.query("SELECT full_name FROM customers");
+    const allCustomers = await pool.query("SELECT full_name FROM customers WHERE source = 'ADMIN'");
     const duplicateName = allCustomers.rows.find(c => normalizeString(c.full_name) === normalizedName);
     if (duplicateName) {
       return res.status(409).json({ 
@@ -109,7 +109,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
     // Fetch the created customer to return consistent format
     const r = await pool.query(
-      `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
+      `SELECT ${CUSTOMER_COLUMNS}
        FROM customers WHERE id=$1 LIMIT 1`,
       [id]
     );
@@ -122,21 +122,22 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
 /**
  * PATCH /admin/customers/:id
- * Actualiza cliente
+ * Actualiza cliente. Editar una ficha creada por la web la vuelve del panel
+ * (source = ADMIN): desde entonces el checkout público ya no la reutiliza.
  */
-router.patch("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+router.patch("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), requirePermission("customers", "canEdit"), async (req, res) => {
   const { id } = req.params;
 
   const schema = z.object({
-    email: z.string().email().optional().nullable(),
-    fullName: z.string().min(2).optional(),
-    phone: z.string().min(6).optional().nullable(),
-    address: z.string().min(3).optional().nullable(),
+    email: z.string().email().max(254).optional().nullable(),
+    fullName: z.string().min(2).max(200).optional(),
+    phone: z.string().min(6).max(50).optional().nullable(),
+    address: z.string().min(3).max(400).optional().nullable(),
     notes: z.string().max(500).optional().nullable(),
   });
 
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const d = parsed.data;
 
@@ -180,6 +181,7 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPa
       return res.status(400).json({ ok: false, error: "No hay campos para actualizar" });
     }
 
+    fields.push(`source='ADMIN'`);
     fields.push(`updated_at=NOW()`);
     values.push(id);
 
@@ -189,7 +191,7 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPa
     );
 
     const r = await pool.query(
-      `SELECT id, email, full_name, phone, address, notes, created_at, updated_at
+      `SELECT ${CUSTOMER_COLUMNS}
        FROM customers WHERE id=$1 LIMIT 1`,
       [id]
     );
@@ -204,7 +206,7 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPa
  * DELETE /admin/customers/:id
  * Elimina cliente
  */
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), requirePermission("customers", "canDelete"), async (req, res) => {
   const { id } = req.params;
 
   try {

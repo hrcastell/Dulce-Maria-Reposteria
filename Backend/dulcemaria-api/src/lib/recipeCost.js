@@ -35,8 +35,11 @@ function computeRecipeCost({ recipe, items, equipment, energyPriceKwh, energyPri
   let itemsCost = 0;
   let maxBatches = items.length > 0 ? Infinity : 0;
   let hasUnpricedItem = false;
+  // Lo necesario se suma POR INSUMO: un mismo insumo en dos líneas (azúcar en
+  // la masa y en el almíbar) consume del mismo stock (B-27).
+  const neededBySupply = new Map();
 
-  for (const item of items) {
+  items.forEach((item, index) => {
     const s = item.supply;
     const referenceQty = Number(s.reference_qty) || 1;
     const unitPrice = s.last_price_clp != null ? Number(s.last_price_clp) / referenceQty : null;
@@ -55,11 +58,17 @@ function computeRecipeCost({ recipe, items, equipment, energyPriceKwh, energyPri
     }
 
     if (neededInSupplyUnit != null && neededInSupplyUnit > 0) {
-      const stockQty = Number(s.stock_qty) || 0;
-      maxBatches = Math.min(maxBatches, Math.floor(stockQty / neededInSupplyUnit));
+      const key = s.id || `linea:${index}`;
+      const entry = neededBySupply.get(key) || { needed: 0, stock: Number(s.stock_qty) || 0 };
+      entry.needed += neededInSupplyUnit;
+      neededBySupply.set(key, entry);
     } else {
       maxBatches = 0;
     }
+  });
+
+  for (const { needed, stock } of neededBySupply.values()) {
+    maxBatches = Math.min(maxBatches, Math.floor(stock / needed));
   }
 
   if (!Number.isFinite(maxBatches) || maxBatches < 0) maxBatches = 0;
@@ -94,6 +103,44 @@ function computeRecipeCost({ recipe, items, equipment, energyPriceKwh, energyPri
     maxBatches,
     hasUnpricedItem,
   };
+}
+
+// ============================================
+// Producción ("Hacer receta"): insumos a descontar
+// ============================================
+
+// supplies.stock_qty es NUMERIC(12,3): se trabaja con la misma precisión.
+function roundSupplyQty(value) {
+  return Math.round(Number(value) * 1000) / 1000;
+}
+
+/**
+ * Cantidad total a descontar por insumo (en la unidad del insumo) para
+ * `batches` tandas. Lanza 400 si una línea tiene una unidad incompatible.
+ * `lines`: [{ supply_id, supply_name, supply_unit, quantity, unit, stock_qty }]
+ * @returns {Array<{ supplyId, name, unit, amount, stock }>} en orden de aparición
+ */
+function aggregateSupplyNeeds(lines, batches) {
+  const bySupply = new Map();
+  for (const line of lines) {
+    const amount = convertQuantity(Number(line.quantity), line.unit, line.supply_unit) * batches;
+    if (!bySupply.has(line.supply_id)) {
+      bySupply.set(line.supply_id, {
+        supplyId: line.supply_id,
+        name: line.supply_name,
+        unit: line.supply_unit,
+        amount: 0,
+        stock: roundSupplyQty(line.stock_qty || 0),
+      });
+    }
+    bySupply.get(line.supply_id).amount += amount;
+  }
+  return [...bySupply.values()].map((need) => ({ ...need, amount: roundSupplyQty(need.amount) }));
+}
+
+/** Insumos cuyo stock no alcanza para lo pedido. */
+function findInsufficientSupplies(needs) {
+  return needs.filter((need) => need.amount > need.stock);
 }
 
 // ============================================
@@ -440,6 +487,9 @@ async function getRecipeCostsByIds(db, recipeIds) {
 module.exports = {
   computeRecipeCost,
   computeManualCost,
+  aggregateSupplyNeeds,
+  findInsufficientSupplies,
+  roundSupplyQty,
   getEnergyPrices,
   getItemsForRecipes,
   getRecipeCostsByIds,

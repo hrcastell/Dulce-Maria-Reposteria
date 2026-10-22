@@ -5,13 +5,23 @@ const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 const { VALID_UNITS, convertQuantity } = require("../lib/units");
+const { validationError } = require("../lib/httpErrors");
+const { clpAmount, searchTerm, optionalQuery, optionalQueryNumber } = require("../lib/schemas");
+const { isIsoDate, santiagoToday, santiagoYearMonth } = require("../lib/santiagoTime");
+
+// Cantidades de insumo: NUMERIC(12,3) admite hasta 999.999.999,999.
+const MAX_SUPPLY_QTY = 100000000;
 
 const router = express.Router();
 
 // ===== SUPPLIES (Insumos) =====
 
+const listQuerySchema = z.object({ q: optionalQuery(searchTerm) });
+
 router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const search = String(req.query.q || "").trim();
+  const query = listQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const search = query.data.q || "";
   try {
     const pool = getPool();
     const r = await pool.query(
@@ -32,13 +42,13 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const schema = z.object({
     name: z.string().min(1).max(200),
     unit: z.enum(VALID_UNITS).optional().nullable(),
-    last_price_clp: z.number().int().nonnegative().optional().nullable(),
-    stock_qty: z.number().nonnegative().optional(),
-    reference_qty: z.number().positive().optional(),
+    last_price_clp: clpAmount().optional().nullable(),
+    stock_qty: z.number().nonnegative().max(MAX_SUPPLY_QTY).optional(),
+    reference_qty: z.number().positive().max(MAX_SUPPLY_QTY).optional(),
     notes: z.string().max(500).optional().nullable(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   try {
     const pool = getPool();
@@ -60,14 +70,14 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id")
   const schema = z.object({
     name: z.string().min(1).max(200).optional(),
     unit: z.enum(VALID_UNITS).optional().nullable(),
-    last_price_clp: z.number().int().nonnegative().optional().nullable(),
-    stock_qty: z.number().nonnegative().optional(),
-    reference_qty: z.number().positive().optional(),
+    last_price_clp: clpAmount().optional().nullable(),
+    stock_qty: z.number().nonnegative().max(MAX_SUPPLY_QTY).optional(),
+    reference_qty: z.number().positive().max(MAX_SUPPLY_QTY).optional(),
     notes: z.string().max(500).optional().nullable(),
     is_active: z.boolean().optional(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const d = parsed.data;
   const fields = [];
@@ -103,15 +113,22 @@ router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id")
   }
 });
 
-router.get("/ping", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
-  res.json({ ok: true, route: "admin.supplies" });
-});
+// (GET /ping se eliminó: era un endpoint de prueba sin ningún cliente — C-20.)
 
 // ===== EXPENSES (Gastos) =====
 
+const expensesQuerySchema = z.object({
+  year: optionalQueryNumber({ min: 2000, max: 2100, int: true }),
+  month: optionalQueryNumber({ min: 1, max: 12, int: true }),
+});
+
 router.get("/expenses", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const year = String(req.query.year || new Date().getFullYear());
-  const month = String(req.query.month || String(new Date().getMonth() + 1).padStart(2, "0"));
+  const query = expensesQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  // Mes por defecto: el mes calendario actual en Chile (no el del servidor).
+  const now = santiagoYearMonth();
+  const year = String(query.data.year ?? now.year);
+  const month = String(query.data.month ?? now.month);
   const startDate = `${year}-${month.padStart(2, "0")}-01`;
 
   try {
@@ -156,26 +173,26 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
   const itemSchema = z.object({
     supply_id: z.string().uuid(),
     product_name: z.string().min(1).max(200),
-    quantity: z.number().positive(),
+    quantity: z.number().positive().max(MAX_SUPPLY_QTY),
     unit: z.enum(VALID_UNITS),
-    unit_price_clp: z.number().int().nonnegative(),
-    total_clp: z.number().int().nonnegative(),
+    unit_price_clp: clpAmount(),
+    total_clp: clpAmount(),
     // Compra por unidad discreta (paquete/saco) cuyo contenido neto se conoce —
     // ver comentario de columna en migrations/complete.js.
-    content_qty: z.number().positive().optional().nullable(),
+    content_qty: z.number().positive().max(MAX_SUPPLY_QTY).optional().nullable(),
     content_unit: z.enum(VALID_UNITS).optional().nullable(),
   });
   const schema = z.object({
     description: z.string().min(1).max(300),
-    amount_clp: z.number().int().positive().optional().nullable(),
-    expense_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    amount_clp: clpAmount().positive().optional().nullable(),
+    expense_date: z.string().refine(isIsoDate, "Fecha inválida: usa AAAA-MM-DD.").optional(),
     supply_id: z.string().uuid().optional().nullable(),
     provider_id: z.string().uuid().optional().nullable(),
     notes: z.string().max(500).optional().nullable(),
     items: z.array(itemSchema).min(1).max(200).optional(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const d = parsed.data;
   const hasItems = !!d.items && d.items.length > 0;
@@ -198,7 +215,8 @@ router.post("/expenses", requireRole("SUPERADMIN", "ADMIN"), async (req, res) =>
     await client.query("BEGIN");
 
     const id = crypto.randomUUID();
-    const expenseDate = d.expense_date || new Date().toISOString().split("T")[0];
+    // Hoy en Chile: toISOString() es UTC y de noche ya marcaba el día siguiente.
+    const expenseDate = d.expense_date || santiagoToday();
     const r = await client.query(
       `INSERT INTO expense_records (id, description, amount_clp, expense_date, supply_id, provider_id, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -332,7 +350,9 @@ router.delete("/expenses/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidP
           // revertir en la unidad original igual es mejor que no revertir nada.
         }
       }
-      await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1 WHERE id=$2`, [revertAmount, item.supply_id]);
+      // Nunca bajo cero (CHECK supplies_stock_qty_nonneg): si el insumo ya se
+      // consumió en producción, revertir la compra lo deja en 0.
+      await client.query(`UPDATE supplies SET stock_qty = GREATEST(stock_qty - $1, 0) WHERE id=$2`, [revertAmount, item.supply_id]);
 
       // Si este gasto sigue siendo el que dejó el "último precio" del insumo (nadie
       // lo pisó después), lo limpiamos en vez de dejar un precio fantasma tras

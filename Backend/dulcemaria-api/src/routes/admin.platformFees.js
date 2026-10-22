@@ -17,10 +17,67 @@ const { getPool } = require("../db");
 const { requirePlatformOwner } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
 const { TIMEZONE } = require("../lib/platformFeeEngine");
+const { validationError, sendError } = require("../lib/httpErrors");
+const { isoDateOrDateTime, optionalQuery, optionalQueryNumber } = require("../lib/schemas");
+const { resolveDateRangeFilter, buildTimestampRangeClauses } = require("../lib/santiagoTime");
 
 const router = express.Router();
 
 router.use(requirePlatformOwner);
+
+// Volúmenes BIGINT: se aceptan hasta el máximo entero seguro de JavaScript.
+const MAX_VOLUME_CLP = Number.MAX_SAFE_INTEGER;
+// fee_per_transaction_clp / fee_applied_clp son INT: tope holgado y razonable.
+const MAX_FEE_CLP = 1000000;
+
+/**
+ * GET /admin/platform-fees/config
+ * Tarifa de respaldo (system_config.platform_fee_default_clp) que el motor
+ * aplica cuando ningún tier cubre el volumen del mes. Exclusivo del dueño de
+ * la plataforma: el endpoint genérico /admin/config ya no expone estas claves.
+ */
+router.get("/config", async (req, res) => {
+  try {
+    const pool = getPool();
+    const r = await pool.query(
+      `SELECT key, value, updated_at FROM system_config
+       WHERE key IN ('platform_fee_default_clp', 'platform_fee_engine_activated_at')`
+    );
+    const byKey = new Map(r.rows.map((row) => [row.key, row]));
+    const fallback = byKey.get("platform_fee_default_clp");
+    return res.json({
+      ok: true,
+      config: {
+        default_fee_clp: fallback ? Number(fallback.value) : null,
+        default_fee_updated_at: fallback ? fallback.updated_at : null,
+        engine_activated_at: byKey.get("platform_fee_engine_activated_at")?.value ?? null,
+      },
+    });
+  } catch (e) {
+    return sendError(res, e);
+  }
+});
+
+/**
+ * PUT /admin/platform-fees/config  { default_fee_clp }
+ */
+router.put("/config", async (req, res) => {
+  const schema = z.object({ default_fee_clp: z.number().int().min(0).max(MAX_FEE_CLP) }).strict();
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  try {
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO system_config (key, value, updated_at)
+       VALUES ('platform_fee_default_clp', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [String(parsed.data.default_fee_clp)]
+    );
+    return res.json({ ok: true, config: { default_fee_clp: parsed.data.default_fee_clp } });
+  } catch (e) {
+    return sendError(res, e);
+  }
+});
 
 // Sentinel para "sin techo" (max_monthly_volume_clp NULL) en la comparación
 // de solapamiento de rangos — nunca se espera un volumen real ni cercano.
@@ -64,10 +121,10 @@ router.get("/tiers", async (req, res) => {
 });
 
 const tierCreateSchema = z.object({
-  label: z.string().min(1),
-  min_monthly_volume_clp: z.number().int().nonnegative(),
-  max_monthly_volume_clp: z.number().int().positive().nullable().optional(),
-  fee_per_transaction_clp: z.number().int().nonnegative(),
+  label: z.string().trim().min(1).max(100),
+  min_monthly_volume_clp: z.number().int().nonnegative().max(MAX_VOLUME_CLP),
+  max_monthly_volume_clp: z.number().int().positive().max(MAX_VOLUME_CLP).nullable().optional(),
+  fee_per_transaction_clp: z.number().int().nonnegative().max(MAX_FEE_CLP),
   is_active: z.boolean().optional().default(true),
 });
 
@@ -77,7 +134,7 @@ const tierCreateSchema = z.object({
  */
 router.post("/tiers", async (req, res) => {
   const parsed = tierCreateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   const { label, min_monthly_volume_clp, fee_per_transaction_clp, is_active } = parsed.data;
   const max_monthly_volume_clp = parsed.data.max_monthly_volume_clp ?? null;
@@ -114,10 +171,10 @@ router.post("/tiers", async (req, res) => {
 });
 
 const tierUpdateSchema = z.object({
-  label: z.string().min(1).optional(),
-  min_monthly_volume_clp: z.number().int().nonnegative().optional(),
-  max_monthly_volume_clp: z.number().int().positive().nullable().optional(),
-  fee_per_transaction_clp: z.number().int().nonnegative().optional(),
+  label: z.string().trim().min(1).max(100).optional(),
+  min_monthly_volume_clp: z.number().int().nonnegative().max(MAX_VOLUME_CLP).optional(),
+  max_monthly_volume_clp: z.number().int().positive().max(MAX_VOLUME_CLP).nullable().optional(),
+  fee_per_transaction_clp: z.number().int().nonnegative().max(MAX_FEE_CLP).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -129,7 +186,7 @@ const tierUpdateSchema = z.object({
  */
 router.patch("/tiers/:id", validateUuidParam("id"), async (req, res) => {
   const parsed = tierUpdateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   if (Object.keys(parsed.data).length === 0) {
     return res.status(400).json({ ok: false, error: "Nada para actualizar" });
   }
@@ -146,7 +203,14 @@ router.patch("/tiers/:id", validateUuidParam("id"), async (req, res) => {
     // El spread ya cubre "limpiar el techo mandando max=null explícito"
     // (Zod deja pasar null porque el campo es nullable) vs. "no tocarlo"
     // (Zod ni siquiera incluye la key cuando el cliente no la manda).
-    const next = { ...existing, ...parsed.data };
+    // Los BIGINT guardados se comparan como números (B-28): entre strings,
+    // "2000000" <= "900000" es verdadero.
+    const next = {
+      ...existing,
+      min_monthly_volume_clp: Number(existing.min_monthly_volume_clp),
+      max_monthly_volume_clp: existing.max_monthly_volume_clp == null ? null : Number(existing.max_monthly_volume_clp),
+      ...parsed.data,
+    };
 
     if (next.max_monthly_volume_clp != null && next.max_monthly_volume_clp <= next.min_monthly_volume_clp) {
       return res.status(400).json({ ok: false, error: "max_monthly_volume_clp debe ser mayor a min_monthly_volume_clp" });
@@ -208,23 +272,35 @@ const CHARGE_COLUMNS = `id, order_id, order_no, order_code, order_total_clp,
  * GET /admin/platform-fees/charges?from&to&tier_id&is_fallback&page&limit
  * Ledger paginado — fuente de la "Lista de cobro".
  */
+const chargesQuerySchema = z.object({
+  from: optionalQuery(isoDateOrDateTime),
+  to: optionalQuery(isoDateOrDateTime),
+  tier_id: optionalQuery(z.string().uuid()),
+  is_fallback: optionalQuery(z.enum(["true", "false"])),
+  page: optionalQueryNumber({ min: 1, max: 100000, int: true }),
+  limit: optionalQueryNumber({ min: 1, max: 200, int: true }),
+});
+
 router.get("/charges", async (req, res) => {
-  const from = String(req.query.from || "").trim();
-  const to = String(req.query.to || "").trim();
-  const tierId = String(req.query.tier_id || "").trim();
-  const isFallbackParam = req.query.is_fallback;
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const query = chargesQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const from = query.data.from || "";
+  const to = query.data.to || "";
+  const tierId = query.data.tier_id || "";
+  const isFallbackParam = query.data.is_fallback;
+  const page = query.data.page || 1;
+  const limit = query.data.limit || 50;
   const offset = (page - 1) * limit;
 
   try {
     const pool = getPool();
-    const where = [];
-    const vals = [];
-    let n = 1;
+    // Fechas AAAA-MM-DD = días de Santiago y el "hasta" incluye ese día (C-12);
+    // un instante ISO se respeta tal cual (fin exclusivo).
+    const range = buildTimestampRangeClauses("charged_at", resolveDateRangeFilter({ from, to }), 1);
+    const where = [...range.clauses];
+    const vals = [...range.values];
+    let n = vals.length + 1;
 
-    if (from) { where.push(`charged_at >= $${n++}::timestamptz`); vals.push(from); }
-    if (to) { where.push(`charged_at < $${n++}::timestamptz`); vals.push(to); }
     if (tierId) { where.push(`tier_id = $${n++}::uuid`); vals.push(tierId); }
     if (isFallbackParam === "true" || isFallbackParam === "false") {
       where.push(`is_fallback = $${n++}`);
@@ -335,18 +411,22 @@ router.get("/dashboard", async (req, res) => {
  * una escritura directa a la BD que bypaseó los endpoints con el hook).
  * También sirve como "lista de órdenes por fecha", no solo lo cobrado.
  */
+const reconciliationQuerySchema = z.object({
+  from: optionalQuery(isoDateOrDateTime),
+  to: optionalQuery(isoDateOrDateTime),
+});
+
 router.get("/reconciliation", async (req, res) => {
-  const from = String(req.query.from || "").trim();
-  const to = String(req.query.to || "").trim();
+  const query = reconciliationQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const from = query.data.from || "";
+  const to = query.data.to || "";
 
   try {
     const pool = getPool();
-    const where = [`o.status = 'DELIVERED'`];
-    const vals = [];
-    let n = 1;
-
-    if (from) { where.push(`o.created_at >= $${n++}::timestamptz`); vals.push(from); }
-    if (to) { where.push(`o.created_at < $${n++}::timestamptz`); vals.push(to); }
+    const range = buildTimestampRangeClauses("o.created_at", resolveDateRangeFilter({ from, to }), 1);
+    const where = [`o.status = 'DELIVERED'`, ...range.clauses];
+    const vals = [...range.values];
 
     const r = await pool.query(
       `SELECT o.id AS order_id, o.order_no, o.order_code, o.total_clp, o.created_at,

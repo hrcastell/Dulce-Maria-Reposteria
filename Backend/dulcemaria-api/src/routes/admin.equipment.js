@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const { getPool } = require("../db");
 const { requireRole } = require("../middleware/auth");
 const { validateUuidParam } = require("../middleware/validate-uuid");
+const { validationError } = require("../lib/httpErrors");
 
 const router = express.Router();
 
@@ -29,11 +30,11 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const schema = z.object({
     name: z.string().min(1).max(150),
     energy_type: z.enum(["ELECTRIC", "GAS"]),
-    consumption_rate: z.number().nonnegative(),
+    consumption_rate: z.number().nonnegative().max(1000000),
     consumption_unit: z.string().min(1).max(30),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
 
   try {
     const pool = getPool();

@@ -7,6 +7,10 @@ try {
   bcrypt = null;
 }
 
+// Costo de bcrypt para hashes nuevos. Los hashes con costo menor (o PBKDF2
+// heredado) se re-hashean de forma transparente en el siguiente login exitoso.
+const BCRYPT_TARGET_COST = 12;
+
 // Formato PBKDF2: pbkdf2$sha256$150000$salt$hash
 function pbkdf2Hash(password) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -28,7 +32,7 @@ function pbkdf2Verify(password, stored) {
 }
 
 async function hashPassword(password) {
-  if (bcrypt) return await bcrypt.hash(password, 12);
+  if (bcrypt) return await bcrypt.hash(password, BCRYPT_TARGET_COST);
   return pbkdf2Hash(password);
 }
 
@@ -39,4 +43,17 @@ async function verifyPassword(password, storedHash) {
   return false;
 }
 
-module.exports = { hashPassword, verifyPassword };
+/**
+ * ¿Conviene re-hashear este hash tras un login exitoso?
+ * Verdadero para PBKDF2 heredado y para bcrypt con costo menor al objetivo.
+ * Formatos desconocidos no se tocan.
+ */
+function needsRehash(storedHash, { bcryptAvailable = Boolean(bcrypt) } = {}) {
+  const value = String(storedHash || "");
+  if (value.startsWith("pbkdf2$")) return bcryptAvailable;
+  const match = /^\$2[abxy]\$(\d{2})\$/.exec(value);
+  if (match) return Number(match[1]) < BCRYPT_TARGET_COST;
+  return false;
+}
+
+module.exports = { hashPassword, verifyPassword, needsRehash, BCRYPT_TARGET_COST };

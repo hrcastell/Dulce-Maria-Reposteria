@@ -52,9 +52,12 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
-      # Comma-separated — both local frontend origins are allowed (see
-      # server.js CORS handling). Browser-facing, so these stay on localhost.
-      FRONTEND_URL: http://localhost:4302,http://localhost:4303
+      # Browser-facing origins, so these stay on localhost. ADMIN_ORIGINS gets
+      # credentialed CORS + cookie session (admin panel only); PUBLIC_ORIGINS
+      # gets non-credentialed CORS on public routes (storefront). See
+      # src/lib/originPolicy.js. FRONTEND_URL is only a legacy fallback.
+      ADMIN_ORIGINS: http://localhost:4302
+      PUBLIC_ORIGINS: http://localhost:4303
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
@@ -63,6 +66,24 @@ services:
       # está vacía (src/bootstrap/autoSuperadmin.js). Poné `false` en .env
       # para desactivarlo. Nunca corre con NODE_ENV=production.
       AUTO_BOOTSTRAP_SUPERADMIN: ${AUTO_BOOTSTRAP_SUPERADMIN:-true}
+      # Pagos en línea (dev): Webpay en INTEGRACIÓN con las credenciales
+      # PÚBLICAS de prueba de Transbank (por defecto en
+      # src/lib/payments/webpay/constants.js; no son secretos y no mueven
+      # dinero). TRANSBANK_ENV=production se rechaza fuera de NODE_ENV=production.
+      WEBPAY_ENABLED: ${WEBPAY_ENABLED:-true}
+      TRANSBANK_ENV: ${TRANSBANK_ENV:-integration}
+      # URLs que ve el NAVEGADOR (retorno de Webpay y página de pago /pago/#t=...).
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-http://localhost:4303}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:4301}
+      PUBLIC_PAYMENT_PAGE_PATH: ${PUBLIC_PAYMENT_PAGE_PATH:-/pago/}
+      PAYMENT_ORDER_TTL_MINUTES: ${PAYMENT_ORDER_TTL_MINUTES:-30}
+      # Mercado Pago exige back_urls https y un webhook público: se prueba con
+      # un túnel https (API_PUBLIC_URL del túnel) y credenciales de prueba en
+      # .env. Deshabilitado por defecto.
+      MERCADOPAGO_ENABLED: ${MERCADOPAGO_ENABLED:-false}
+      MERCADOPAGO_ENV: ${MERCADOPAGO_ENV:-test}
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
     ports:
       - "4301:3000"
     volumes:

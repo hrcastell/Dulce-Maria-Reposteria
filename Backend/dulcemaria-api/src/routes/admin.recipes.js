@@ -11,8 +11,12 @@ const {
   scaleComponents,
   computeVolumeRatio,
   previewRecipeCost,
+  aggregateSupplyNeeds,
+  findInsufficientSupplies,
 } = require("../lib/recipeCost");
-const { convertQuantity, VALID_UNITS } = require("../lib/units");
+const { VALID_UNITS } = require("../lib/units");
+const { validationError, sendError, appError } = require("../lib/httpErrors");
+const { clpAmount, searchTerm, optionalQuery, optionalQueryNumber } = require("../lib/schemas");
 
 const router = express.Router();
 
@@ -71,10 +75,10 @@ const recipeSchema = z
     equipment_id: z.string().uuid().optional().nullable(),
     baking_time_minutes: z.number().nonnegative().optional().nullable(),
     labor_minutes: z.number().nonnegative().optional().nullable(),
-    labor_rate_clp_hour: z.number().int().nonnegative().optional().nullable(),
+    labor_rate_clp_hour: clpAmount().optional().nullable(),
     margin_pct: z.number().min(0).max(99.99).optional().nullable(),
     cost_mode: z.enum(["INSUMOS", "MANUAL"]).default("INSUMOS"),
-    manual_cost_clp: z.number().int().nonnegative().optional().nullable(), // usado cuando cost_mode=MANUAL
+    manual_cost_clp: clpAmount().optional().nullable(), // usado cuando cost_mode=MANUAL
     is_scalable: z.boolean().default(false),
     ref_diameter_cm: z.number().positive().optional().nullable(),
     ref_height_cm: z.number().positive().optional().nullable(),
@@ -121,8 +125,12 @@ async function persistRecipeItems(client, recipeId, d) {
 }
 
 // GET /admin/recipes — listado para las cards (escalables se costean a su tamaño de referencia)
+const listQuerySchema = z.object({ q: optionalQuery(searchTerm) });
+
 router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
-  const search = String(req.query.q || "").trim();
+  const query = listQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
+  const search = query.data.q || "";
   try {
     const pool = getPool();
     const r = await pool.query(
@@ -164,7 +172,7 @@ router.get(["", "/"], requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
 // STAFF puede llamarlo (no muta nada) para que el panel de solo-lectura también lo use.
 router.post("/preview-cost", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   const parsed = previewCostSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   try {
     const pool = getPool();
     const cost = await previewRecipeCost(pool, parsed.data);
@@ -176,7 +184,15 @@ router.post("/preview-cost", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async 
 
 // GET /admin/recipes/:id — detalle para el formulario. Con ?target_diameter_cm=&target_height_cm=&target_layers=
 // costea una receta escalable a ese tamaño en vez de al de referencia.
+const targetDimsQuerySchema = z.object({
+  target_diameter_cm: optionalQueryNumber({ min: 0.1, max: 1000 }),
+  target_height_cm: optionalQueryNumber({ min: 0.1, max: 1000 }),
+  target_layers: optionalQueryNumber({ min: 1, max: 100, int: true }),
+});
+
 router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidParam("id"), async (req, res) => {
+  const query = targetDimsQuerySchema.safeParse(req.query);
+  if (!query.success) return validationError(res, query.error);
   try {
     const pool = getPool();
     const r = await pool.query(
@@ -190,9 +206,9 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
     const row = r.rows[0];
 
     const targetDims = {};
-    if (req.query.target_diameter_cm) targetDims.diameterCm = Number(req.query.target_diameter_cm);
-    if (req.query.target_height_cm) targetDims.heightCm = Number(req.query.target_height_cm);
-    if (req.query.target_layers) targetDims.layers = Number(req.query.target_layers);
+    if (query.data.target_diameter_cm !== undefined) targetDims.diameterCm = query.data.target_diameter_cm;
+    if (query.data.target_height_cm !== undefined) targetDims.heightCm = query.data.target_height_cm;
+    if (query.data.target_layers !== undefined) targetDims.layers = query.data.target_layers;
 
     const cost = await getSingleRecipeCost(pool, req.params.id, targetDims);
 
@@ -266,7 +282,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), validateUuidPara
 // POST /admin/recipes — crear (plana con items, o escalable con components)
 router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
   const parsed = recipeSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   const d = parsed.data;
 
   const pool = getPool();
@@ -315,7 +331,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN"), async (req, res) => {
 // PUT /admin/recipes/:id — reemplaza los campos y el set completo de insumos/componentes
 router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
   const parsed = recipeSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   const d = parsed.data;
   const { id } = req.params;
 
@@ -379,7 +395,7 @@ router.put("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), 
 router.patch("/:id", requireRole("SUPERADMIN", "ADMIN"), validateUuidParam("id"), async (req, res) => {
   const schema = z.object({ is_active: z.boolean() });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   try {
     const pool = getPool();
     const r = await pool.query(`UPDATE recipes SET is_active=$1, updated_at=NOW() WHERE id=$2 RETURNING id`, [parsed.data.is_active, req.params.id]);
@@ -411,7 +427,7 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
     target_layers: z.number().int().positive().optional(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  if (!parsed.success) return validationError(res, parsed.error);
   const { batches, target_diameter_cm, target_height_cm, target_layers } = parsed.data;
   const { id } = req.params;
 
@@ -480,21 +496,28 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
       lines = itemsRes.rows.map((row) => ({ ...row, stock_qty: Number(row.stock_qty) }));
     }
 
-    // Validar stock de TODOS los insumos antes de descontar ninguno.
-    const needed = lines.map((line) => {
-      const neededInSupplyUnit = convertQuantity(Number(line.quantity), line.unit, line.supply_unit) * batches;
-      if (neededInSupplyUnit > line.stock_qty) {
-        const err = new Error(
-          `Stock insuficiente para "${line.supply_name}". Disponible: ${line.stock_qty} ${line.supply_unit}, necesario: ${neededInSupplyUnit} ${line.supply_unit}`
-        );
-        err.statusCode = 409;
-        throw err;
-      }
-      return { supplyId: line.supply_id, amount: neededInSupplyUnit };
-    });
+    // Validar stock de TODOS los insumos antes de descontar ninguno, sumando
+    // lo necesario POR INSUMO: un insumo usado en dos componentes (azúcar en
+    // la masa y en el almíbar) sale del mismo stock (B-27).
+    const needed = aggregateSupplyNeeds(lines, batches);
+    const insufficient = findInsufficientSupplies(needed);
+    if (insufficient.length) {
+      const first = insufficient[0];
+      throw appError(
+        409,
+        "OUT_OF_STOCK",
+        `Stock insuficiente para "${first.name}". Disponible: ${first.stock} ${first.unit}, necesario: ${first.amount} ${first.unit}`
+      );
+    }
 
+    // Descuento condicional: nunca deja un insumo bajo cero.
     for (const n of needed) {
-      await client.query(`UPDATE supplies SET stock_qty = stock_qty - $1, updated_at=NOW() WHERE id=$2`, [n.amount, n.supplyId]);
+      const r = await client.query(
+        `UPDATE supplies SET stock_qty = stock_qty - $1::numeric, updated_at=NOW()
+         WHERE id=$2 AND stock_qty >= $1::numeric`,
+        [n.amount.toFixed(3), n.supplyId]
+      );
+      if (r.rowCount === 0) throw appError(409, "OUT_OF_STOCK", `Stock insuficiente para "${n.name}".`);
     }
 
     // Producto(s) vinculado(s): recarga stock solo si no tienen variantes (su stock
@@ -521,8 +544,9 @@ router.post("/:id/produce", requireRole("SUPERADMIN", "ADMIN"), validateUuidPara
     } catch (rollbackErr) {
       console.error("Rollback failed:", rollbackErr.message);
     }
-    const statusCode = Number(e?.statusCode || 400);
-    res.status(statusCode).json({ ok: false, error: String(e?.message ?? e) });
+    // Errores de negocio → 400/409 con su mensaje; errores de PostgreSQL →
+    // mensaje genérico (el detalle solo va al log del servidor).
+    return sendError(res, e, { defaultStatus: 400 });
   } finally {
     client.release();
   }
